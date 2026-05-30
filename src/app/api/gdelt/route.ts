@@ -1,12 +1,30 @@
 import { NextResponse } from 'next/server';
 
-// Server-side cache and lock to absolutely guarantee GDELT's 1-request-per-5-seconds rule
+// Server-side cache and lock
 let lastFetchTime = 0;
 let cachedData: any = null;
 let lastQuery: string | null = null;
 let isFetching = false;
 
 const COOLDOWN_MS = 6000; // 6 seconds
+
+// Fallback data when rate limited
+const mockFallback = {
+  articles: [
+    {
+      url: "https://example.com/fallback-1",
+      domain: "example.com",
+      title: "LIVE FEED PAUSED - GDELT RATE LIMIT EXCEEDED",
+      seendate: new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z',
+    },
+    {
+      url: "https://example.com/fallback-2",
+      domain: "system.local",
+      title: "Showing Cached or Fallback Data. Please wait 6 seconds.",
+      seendate: new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z',
+    }
+  ]
+};
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -18,25 +36,16 @@ export async function GET(request: Request) {
 
   const now = Date.now();
 
-  // 1. If we already fetched this exact query recently, return the cache immediately
   if (cachedData && lastQuery === query && (now - lastFetchTime) < 60000) {
     console.log('[API Route] Returning cached data for query:', query);
     return NextResponse.json(cachedData);
   }
 
-  // 2. If a fetch is currently in progress, reject to prevent overlapping connections
-  if (isFetching) {
-    console.warn('[API Route] Fetch in progress, rejecting overlapping request.');
-    return NextResponse.json({ error: 'Rate limit protection active, please wait.' }, { status: 429 });
+  if (isFetching || (now - lastFetchTime < COOLDOWN_MS)) {
+    console.warn('[API Route] Cooldown active. Returning cached or fallback data.');
+    return NextResponse.json(cachedData || mockFallback);
   }
 
-  // 3. If we are within the cooldown period from ANY previous fetch, reject
-  if (now - lastFetchTime < COOLDOWN_MS) {
-    console.warn('[API Route] Global cooldown active, rejecting request.');
-    return NextResponse.json({ error: 'Rate limit protection active, please wait.' }, { status: 429 });
-  }
-
-  // 4. Safe to fetch
   isFetching = true;
 
   try {
@@ -55,6 +64,11 @@ export async function GET(request: Request) {
     if (!response.ok) {
       const text = await response.text();
       console.error('[API Route] GDELT Error Text:', text);
+      if (response.status === 429) {
+        console.log('[API Route] Rate limited by GDELT. Providing fallback.');
+        lastFetchTime = Date.now(); 
+        return NextResponse.json(cachedData || mockFallback);
+      }
       throw new Error(`GDELT API responded with status ${response.status}: ${text}`);
     }
 
@@ -68,9 +82,8 @@ export async function GET(request: Request) {
     return NextResponse.json(data);
   } catch (error: any) {
     console.error('[API Route] Caught Exception:', error);
-    // Even on error, we must update the fetch time so we don't spam retries
     lastFetchTime = Date.now(); 
-    return NextResponse.json({ error: error.message || 'Failed to fetch from GDELT' }, { status: 500 });
+    return NextResponse.json(cachedData || mockFallback);
   } finally {
     isFetching = false;
   }

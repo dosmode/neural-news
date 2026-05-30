@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  reactStrictMode: false, // Disable to prevent double-fetching useEffects in dev mode hitting GDELT limits
 };
 
 export default nextConfig;
