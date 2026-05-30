@@ -1,52 +1,79 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { fetchGdeltNews } from '@/services/gdeltService';
+
+// Global variable to persist across fast refreshes
+let globalLastFetchTime = 0;
+const FETCH_COOLDOWN_MS = 6000; // 6 seconds to be extremely safe with GDELT
 
 export function useGdeltFetch() {
   const activeKeywords = useStore((state) => state.activeKeywords);
   const setArticles = useStore((state) => state.setArticles);
   const setIsLoading = useStore((state) => state.setIsLoading);
   const setError = useStore((state) => state.setError);
+  
+  // Keep track of the latest keywords we actually want to fetch
+  const latestKeywordsRef = useRef(activeKeywords);
+  latestKeywordsRef.current = activeKeywords;
 
   useEffect(() => {
     let isMounted = true;
+    let timer: NodeJS.Timeout;
 
-    async function fetchData() {
-      if (activeKeywords.size === 0) {
-        setArticles([]);
-        setIsLoading(false);
-        setError(null);
+    const executeFetch = async () => {
+      const currentKeywords = latestKeywordsRef.current;
+      
+      if (currentKeywords.size === 0) {
+        if (isMounted) {
+          setArticles([]);
+          setIsLoading(false);
+          setError(null);
+        }
         return;
       }
 
       setIsLoading(true);
       setError(null);
+      globalLastFetchTime = Date.now();
 
       try {
-        const articles = await fetchGdeltNews(activeKeywords);
+        const articles = await fetchGdeltNews(currentKeywords);
         if (isMounted) {
           setArticles(articles);
         }
       } catch (err: any) {
         if (isMounted) {
           setError(err.message || 'Failed to fetch data');
-          // In case of error, we can either clear articles or leave existing ones. Let's leave existing.
         }
       } finally {
         if (isMounted) {
           setIsLoading(false);
         }
       }
-    }
+    };
 
-    // Debounce to 5500ms to respect GDELT's strict 1 request per 5 seconds limit
-    const timer = setTimeout(() => {
-      fetchData();
-    }, 5500);
+    const scheduleFetch = () => {
+      const now = Date.now();
+      const timeSinceLastFetch = now - globalLastFetchTime;
+
+      if (timeSinceLastFetch >= FETCH_COOLDOWN_MS) {
+        // Safe to fetch immediately
+        executeFetch();
+      } else {
+        // Need to wait until cooldown expires
+        const waitTime = FETCH_COOLDOWN_MS - timeSinceLastFetch;
+        setIsLoading(true); // Show loading while waiting in queue
+        timer = setTimeout(() => {
+          executeFetch();
+        }, waitTime);
+      }
+    };
+
+    scheduleFetch();
 
     return () => {
       isMounted = false;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
     };
   }, [activeKeywords, setArticles, setIsLoading, setError]);
 }
