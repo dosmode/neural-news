@@ -14,6 +14,15 @@ import KeywordNode from './KeywordNode';
 import FilterNode from './FilterNode';
 import WeightEdge from './WeightEdge';
 
+const nodeTypes = {
+  keyword: KeywordNode,
+  filter: FilterNode,
+};
+
+const edgeTypes = {
+  weight: WeightEdge,
+};
+
 const initialNodes: Node[] = [
   // Input Layer
   { id: 'nvda', type: 'keyword', position: { x: 50, y: 50 }, data: { label: 'NVDA' } },
@@ -43,17 +52,8 @@ const initialEdges: Edge[] = [];
 });
 
 export default function NetworkGraph() {
-  const nodeTypes = useMemo(() => ({
-    keyword: KeywordNode,
-    filter: FilterNode,
-  }), []);
-
-  const edgeTypes = useMemo(() => ({
-    weight: WeightEdge,
-  }), []);
-
   return (
-    <div className="w-full h-full bg-black">
+    <div className="absolute inset-0 bg-black">
       <ReactFlowProvider>
         <ReactFlow
           nodes={initialNodes}
