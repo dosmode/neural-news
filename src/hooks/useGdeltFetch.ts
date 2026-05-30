@@ -39,10 +39,10 @@ export function useGdeltFetch() {
       }
     }
 
-    // Debounce slightly to prevent rapid firing if multiple clicks happen quickly
+    // Debounce to 5500ms to respect GDELT's strict 1 request per 5 seconds limit
     const timer = setTimeout(() => {
       fetchData();
-    }, 500);
+    }, 5500);
 
     return () => {
       isMounted = false;
