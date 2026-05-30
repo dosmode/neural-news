@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useCallback, useMemo } from 'react';
 import ReactFlow, { 
   Background, 
@@ -11,15 +13,6 @@ import 'reactflow/dist/style.css';
 import KeywordNode from './KeywordNode';
 import FilterNode from './FilterNode';
 import WeightEdge from './WeightEdge';
-
-const nodeTypes = {
-  keyword: KeywordNode,
-  filter: FilterNode,
-};
-
-const edgeTypes = {
-  weight: WeightEdge,
-};
 
 const initialNodes: Node[] = [
   // Input Layer
@@ -50,15 +43,21 @@ const initialEdges: Edge[] = [];
 });
 
 export default function NetworkGraph() {
-  const nodes = useMemo(() => initialNodes, []);
-  const edges = useMemo(() => initialEdges, []);
+  const nodeTypes = useMemo(() => ({
+    keyword: KeywordNode,
+    filter: FilterNode,
+  }), []);
+
+  const edgeTypes = useMemo(() => ({
+    weight: WeightEdge,
+  }), []);
 
   return (
     <div className="w-full h-full bg-black">
       <ReactFlowProvider>
         <ReactFlow
-          nodes={nodes}
-          edges={edges}
+          nodes={initialNodes}
+          edges={initialEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView
