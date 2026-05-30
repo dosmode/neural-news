@@ -64,7 +64,8 @@ export async function fetchGdeltNews(activeKeywords: Set<string>): Promise<Artic
 
   // Construct query: (keyword1 OR keyword2)
   const keywordsArray = Array.from(activeKeywords);
-  const queryStr = `(${keywordsArray.map(kw => `"${kw}"`).join(' OR ')})`;
+  // Remove surrounding quotes from keywords to prevent GDELT "phrase is too short" error
+  const queryStr = `(${keywordsArray.join(' OR ')})`;
   
   // Use internal Next.js API route to bypass CORS
   const url = `/api/gdelt?query=${encodeURIComponent(queryStr)}`;
