@@ -1,22 +1,20 @@
 'use client';
 
-import { useEffect } from 'react';
+import React from 'react';
 import { useStore } from '@/store/useStore';
-import mockData from '@/data/mock-articles.json';
-import { Article } from '@/types';
 
 import NetworkGraph from '@/components/graph/NetworkGraph';
 import CurationMap from '@/components/map/CurationMap';
 import ArticleModal from '@/components/shared/ArticleModal';
 import { useClustering } from '@/hooks/useClustering';
+import { useGdeltFetch } from '@/hooks/useGdeltFetch';
 
 export default function Home() {
-  const { setArticles } = useStore();
   const { gradient } = useClustering(0, 0); 
+  const { isLoading, error } = useStore();
 
-  useEffect(() => {
-    setArticles(mockData.articles as unknown as Article[]);
-  }, [setArticles]);
+  // Initiate fetching logic
+  useGdeltFetch();
 
   return (
     <main className="flex h-screen flex-col bg-black text-white overflow-hidden">
@@ -62,12 +60,14 @@ export default function Home() {
       </div>
 
       {/* Footer / Status Bar */}
-      <footer className="z-20 w-full p-3 bg-black/80 border-t border-white/5 text-[10px] font-mono text-white/30 flex justify-between items-center shrink-0">
+      <footer className="z-20 w-full p-3 bg-black/80 border-t border-white/5 text-[10px] font-mono flex justify-between items-center shrink-0">
         <div className="flex gap-4">
-          <span>STATUS: SYNCED</span>
-          <span>LATENCY: 12ms</span>
+          <span className={error ? 'text-neon-red font-bold' : isLoading ? 'text-neon-blue animate-pulse' : 'text-white/30'}>
+            STATUS: {error ? 'ERROR' : isLoading ? 'FETCHING' : 'SYNCED'}
+          </span>
+          <span className="text-white/30">LATENCY: LIVE (GDELT)</span>
         </div>
-        <div>
+        <div className="text-white/30">
           © 2026 NEURAL NEWS CURATION PLATFORM
         </div>
       </footer>

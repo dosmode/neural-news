@@ -16,9 +16,9 @@
 
 **Purpose**: Update the core types and global state to support live fetching.
 
-- [ ] T001 Update `Article` interface in `src/types/index.ts` to include GDELT fields (`url`, `domain`, `seendate`, `socialimage`).
-- [ ] T002 Update `AppState` interface in `src/types/index.ts` to include `isLoading` and `error` properties.
-- [ ] T003 Update Zustand store in `src/store/useStore.ts` to initialize and manage `isLoading` and `error` state.
+- [x] T001 Update `Article` interface in `src/types/index.ts` to include GDELT fields (`url`, `domain`, `seendate`, `socialimage`).
+- [x] T002 Update `AppState` interface in `src/types/index.ts` to include `isLoading` and `error` properties.
+- [x] T003 Update Zustand store in `src/store/useStore.ts` to initialize and manage `isLoading` and `error` state.
 
 ---
 
@@ -30,11 +30,11 @@
 
 ### Implementation for User Story 1 & 2
 
-- [ ] T004 [P] [US1] Create `src/services/gdeltService.ts` to handle the HTTP GET request to `api.gdeltproject.org`.
-- [ ] T005 [P] [US2] Implement data transformation logic within `gdeltService.ts` to map GDELT JSON to the updated `Article` interface.
-- [ ] T006 [P] [US2] Implement pseudo-relevance scoring logic within `gdeltService.ts` to populate `relevanceMap` based on keyword presence in titles.
-- [ ] T007 [US1] Create `useGdeltFetch` custom hook in `src/hooks/useGdeltFetch.ts` to orchestrate fetching and Zustand state updates.
-- [ ] T008 [US1] Integrate `useGdeltFetch` in `src/app/page.tsx` and remove the static `mockData` loading `useEffect`.
+- [x] T004 [P] [US1] Create `src/services/gdeltService.ts` to handle the HTTP GET request to `api.gdeltproject.org`.
+- [x] T005 [P] [US2] Implement data transformation logic within `gdeltService.ts` to map GDELT JSON to the updated `Article` interface.
+- [x] T006 [P] [US2] Implement pseudo-relevance scoring logic within `gdeltService.ts` to populate `relevanceMap` based on keyword presence in titles.
+- [x] T007 [US1] Create `useGdeltFetch` custom hook in `src/hooks/useGdeltFetch.ts` to orchestrate fetching and Zustand state updates.
+- [x] T008 [US1] Integrate `useGdeltFetch` in `src/app/page.tsx` and remove the static `mockData` loading `useEffect`.
 
 ---
 
@@ -46,8 +46,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T009 [P] [US3] Implement a deterministic sentiment heuristic (e.g., title hashing) in `src/services/gdeltService.ts` during transformation.
-- [ ] T010 [P] [US3] Implement a fallback `type` ('breaking'/'deep-dive') heuristic in `src/services/gdeltService.ts`.
+- [x] T009 [P] [US3] Implement a deterministic sentiment heuristic (e.g., title hashing) in `src/services/gdeltService.ts` during transformation.
+- [x] T010 [P] [US3] Implement a fallback `type` ('breaking'/'deep-dive') heuristic in `src/services/gdeltService.ts`.
 
 ---
 
@@ -55,9 +55,9 @@
 
 **Purpose**: Update UI components to handle loading states, errors, and new data fields.
 
-- [ ] T011 [P] Update `CurationMap` in `src/components/map/CurationMap.tsx` to handle `isLoading` and `error` states visually.
-- [ ] T012 [P] Update `ArticleModal` in `src/components/shared/ArticleModal.tsx` to display `domain`, `seendate`, and provide a clickable link to the original `url`.
-- [ ] T013 Update `page.tsx` status bar footer to show `isLoading` or `error` messages from the store instead of static "SYNCED".
+- [x] T011 [P] Update `CurationMap` in `src/components/map/CurationMap.tsx` to handle `isLoading` and `error` states visually.
+- [x] T012 [P] Update `ArticleModal` in `src/components/shared/ArticleModal.tsx` to display `domain`, `seendate`, and provide a clickable link to the original `url`.
+- [x] T013 Update `page.tsx` status bar footer to show `isLoading` or `error` messages from the store instead of static "SYNCED".
 
 ---
 

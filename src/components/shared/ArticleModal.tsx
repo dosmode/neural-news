@@ -64,9 +64,19 @@ export default function ArticleModal() {
                 ))}
               </div>
 
-              <button className="mt-8 w-full py-3 bg-neon-blue text-black font-bold rounded-lg hover:bg-white transition-all duration-300 uppercase tracking-widest text-xs">
-                Read Full Analysis
-              </button>
+              <div className="mt-2 text-[10px] font-mono text-white/40 flex justify-between border-t border-white/10 pt-4">
+                <span>{article.domain}</span>
+                <span>{article.seendate ? new Date(article.seendate.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, '$1-$2-$3T$4:$5:$6Z')).toLocaleString() : ''}</span>
+              </div>
+
+              <a 
+                href={article.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="mt-4 w-full py-3 bg-neon-blue text-black font-bold rounded-lg hover:bg-white transition-all duration-300 uppercase tracking-widest text-xs text-center block"
+              >
+                Read Full Source Article
+              </a>
             </div>
           </motion.div>
         </div>

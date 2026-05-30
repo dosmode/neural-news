@@ -11,6 +11,8 @@ export const useStore = create<AppState>((set) => ({
   articles: [],
   selectedArticleId: null,
   currentGradient: 'from-blue-900 via-black to-red-900',
+  isLoading: false,
+  error: null,
 
   toggleKeyword: (id) => set((state) => {
     const newSet = new Set(state.activeKeywords);
@@ -29,4 +31,8 @@ export const useStore = create<AppState>((set) => ({
   setSelectedArticle: (id) => set({ selectedArticleId: id }),
 
   setArticles: (articles) => set({ articles }),
+  
+  setIsLoading: (isLoading) => set({ isLoading }),
+  
+  setError: (error) => set({ error }),
 }));

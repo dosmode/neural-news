@@ -25,6 +25,10 @@ export interface Article {
   sentiment: 'positive' | 'negative' | 'neutral';
   relevanceMap: Record<string, number>;
   type: 'breaking' | 'deep-dive';
+  url: string;
+  domain: string;
+  seendate: string;
+  socialimage?: string;
 }
 
 export interface MappedPoint extends Article {
@@ -38,10 +42,14 @@ export interface AppState {
   articles: Article[];
   selectedArticleId: string | null;
   currentGradient: string;
+  isLoading: boolean;
+  error: string | null;
   
   // Actions
   toggleKeyword: (id: string) => void;
   setFilterWeight: (id: string, weight: number) => void;
   setSelectedArticle: (id: string | null) => void;
   setArticles: (articles: Article[]) => void;
+  setIsLoading: (isLoading: boolean) => void;
+  setError: (error: string | null) => void;
 }
