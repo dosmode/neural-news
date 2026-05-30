@@ -1,0 +1,120 @@
+{
+  "articles": [
+    {
+      "id": "a1",
+      "title": "Nvidia Blackwell: The Future of AI Infrastructure",
+      "summary": "Nvidia unveils its most powerful GPU architecture yet, designed to scale generative AI to trillions of parameters.",
+      "sentiment": "positive",
+      "relevanceMap": {
+        "nvda": 0.95,
+        "ai-trend": 0.9,
+        "tsmc": 0.7
+      },
+      "type": "deep-dive"
+    },
+    {
+      "id": "a2",
+      "title": "TSMC Reports Record Revenue Growth",
+      "summary": "The world's largest contract chipmaker sees a surge in demand for 3nm nodes driven by AI high-performance computing.",
+      "sentiment": "positive",
+      "relevanceMap": {
+        "tsmc": 0.9,
+        "nvda": 0.6,
+        "ai-trend": 0.7
+      },
+      "type": "breaking"
+    },
+    {
+      "id": "a3",
+      "title": "Fed Signals Higher for Longer Rates",
+      "summary": "Federal Reserve Chairman hints at cautious approach to rate cuts as inflation remains sticky.",
+      "sentiment": "negative",
+      "relevanceMap": {
+        "fed-rate": 0.95,
+        "macro": 0.8,
+        "us-china": 0.4
+      },
+      "type": "breaking"
+    },
+    {
+      "id": "a4",
+      "title": "US-China Tech War Escalates with New Export Controls",
+      "summary": "Washington imposes stricter limits on advanced semiconductor exports to Beijing, citing national security concerns.",
+      "sentiment": "negative",
+      "relevanceMap": {
+        "us-china": 0.9,
+        "nvda": 0.7,
+        "tsmc": 0.8
+      },
+      "type": "deep-dive"
+    },
+    {
+      "id": "a5",
+      "title": "AI Bubble Fears Grow as Tech Valuations Soar",
+      "summary": "Analysts warn of overextended market sentiment in AI stocks, drawing parallels to the dot-com era.",
+      "sentiment": "negative",
+      "relevanceMap": {
+        "ai-trend": 0.8,
+        "nvda": 0.6,
+        "macro": 0.5
+      },
+      "type": "deep-dive"
+    },
+    {
+      "id": "a6",
+      "title": "OpenAI Launches SearchGPT Prototype",
+      "summary": "OpenAI enters the search market, challenging Google's dominance with AI-powered direct answers.",
+      "sentiment": "positive",
+      "relevanceMap": {
+        "ai-trend": 0.9,
+        "google": 0.8
+      },
+      "type": "breaking"
+    },
+    {
+      "id": "a7",
+      "title": "Apple Intelligence Set for Fall Release",
+      "summary": "Apple confirms integration of generative AI features across iPhone, iPad, and Mac platforms.",
+      "sentiment": "positive",
+      "relevanceMap": {
+        "apple": 0.9,
+        "ai-trend": 0.7
+      },
+      "type": "breaking"
+    },
+    {
+      "id": "a8",
+      "title": "Crypto Markets React to Macro Uncertainty",
+      "summary": "Bitcoin and Ethereum see increased volatility as traders weigh Fed decisions and geopolitical tensions.",
+      "sentiment": "negative",
+      "relevanceMap": {
+        "crypto": 0.9,
+        "macro": 0.7,
+        "fed-rate": 0.6
+      },
+      "type": "breaking"
+    },
+    {
+      "id": "a9",
+      "title": "Global Logistics Stabilize After Red Sea Disruptions",
+      "summary": "Supply chains show resilience as shipping routes adapt to ongoing geopolitical challenges.",
+      "sentiment": "positive",
+      "relevanceMap": {
+        "macro": 0.8,
+        "us-china": 0.5
+      },
+      "type": "deep-dive"
+    },
+    {
+      "id": "a10",
+      "title": "Quantum Computing Breakthrough at Google",
+      "summary": "Google researchers demonstrate error correction milestone in quantum processors.",
+      "sentiment": "positive",
+      "relevanceMap": {
+        "google": 0.9,
+        "ai-trend": 0.4
+      },
+      "type": "deep-dive"
+    }
+  ]
+}
