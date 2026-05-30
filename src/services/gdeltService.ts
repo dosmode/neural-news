@@ -66,9 +66,10 @@ export async function fetchGdeltNews(activeKeywords: Set<string>): Promise<Artic
   const keywordsArray = Array.from(activeKeywords);
   const queryStr = `(${keywordsArray.map(kw => `"${kw}"`).join(' OR ')})`;
   
-  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(queryStr)}&mode=artlist&maxrecords=50&format=json&sort=DateDesc`;
+  // Use internal Next.js API route to bypass CORS
+  const url = `/api/gdelt?query=${encodeURIComponent(queryStr)}`;
 
-  console.log('🌍 [GDELT Fetch] Requesting URL:', url);
+  console.log('🌍 [GDELT Fetch] Requesting Internal Proxy URL:', url);
 
   const response = await fetch(url);
   
