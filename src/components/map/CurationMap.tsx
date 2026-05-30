@@ -4,11 +4,12 @@ import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useClustering } from '@/hooks/useClustering';
 import { useStore } from '@/store/useStore';
-import { MappedPoint } from '@/types';
 
 export default function CurationMap() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  
+  // Dimensions only pass > 0 after mount
   const { points } = useClustering(dimensions.width, dimensions.height);
   const setSelectedArticle = useStore((state) => state.setSelectedArticle);
 
@@ -35,40 +36,46 @@ export default function CurationMap() {
 
   return (
     <div ref={containerRef} className="w-full h-full relative overflow-hidden bg-transparent">
-      <svg className="w-full h-full pointer-events-none">
-        {/* Connection lines between points could be added here for extra visual complexity */}
-      </svg>
-
-      <div className="absolute inset-0">
+      {/* Ensure absolute container spans the whole area */}
+      <div className="absolute inset-0 z-10">
         <AnimatePresence>
-          {points.map((point) => (
-            <motion.div
-              key={point.id}
-              initial={false}
-              animate={{ 
-                x: point.x - 10, 
-                y: point.y - 10,
-                scale: 1,
-              }}
-              whileHover={{ scale: 1.5, zIndex: 50 }}
-              onClick={() => setSelectedArticle(point.id)}
-              className={`
-                absolute w-5 h-5 rounded-full cursor-pointer shadow-lg
-                ${point.sentiment === 'positive' ? 'bg-neon-blue shadow-neon-blue/50' : 
-                  point.sentiment === 'negative' ? 'bg-neon-red shadow-neon-red/50' : 
-                  'bg-white shadow-white/50'}
-                border border-white/20
-              `}
-              title={point.title}
-            >
-              <div className="absolute inset-0 rounded-full animate-ping bg-inherit opacity-20" />
-            </motion.div>
-          ))}
+          {points.map((point) => {
+            // Guard against NaN
+            const safeX = isNaN(point.x) ? dimensions.width / 2 : point.x;
+            const safeY = isNaN(point.y) ? dimensions.height / 2 : point.y;
+            
+            return (
+              <motion.div
+                key={point.id}
+                initial={{ opacity: 0, scale: 0 }}
+                animate={{ 
+                  opacity: 1,
+                  x: safeX - 10, 
+                  y: safeY - 10,
+                  scale: 1,
+                }}
+                exit={{ opacity: 0, scale: 0 }}
+                transition={{ type: 'spring', stiffness: 50, damping: 10 }}
+                whileHover={{ scale: 1.5, zIndex: 50 }}
+                onClick={() => setSelectedArticle(point.id)}
+                className={`
+                  absolute top-0 left-0 w-5 h-5 rounded-full cursor-pointer shadow-lg
+                  ${point.sentiment === 'positive' ? 'bg-neon-blue shadow-[0_0_10px_rgba(0,243,255,0.8)]' : 
+                    point.sentiment === 'negative' ? 'bg-neon-red shadow-[0_0_10px_rgba(255,49,49,0.8)]' : 
+                    'bg-white shadow-[0_0_10px_rgba(255,255,255,0.8)]'}
+                  border border-white/20
+                `}
+                title={point.title}
+              >
+                <div className="absolute inset-0 rounded-full animate-ping bg-inherit opacity-20" />
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </div>
 
-      {points.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-white/10 font-mono text-sm">
+      {points.length === 0 && dimensions.width > 0 && (
+        <div className="absolute inset-0 flex items-center justify-center text-white/10 font-mono text-sm pointer-events-none">
           NO DATA POINTS DETECTED
         </div>
       )}
