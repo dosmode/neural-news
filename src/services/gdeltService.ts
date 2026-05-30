@@ -63,23 +63,26 @@ export async function fetchGdeltNews(activeKeywords: Set<string>): Promise<Artic
   }
 
   // Construct query: (keyword1 OR keyword2)
-  // GDELT uses space as AND, so we need OR.
-  // Actually, GDELT supports "keyword1 OR keyword2"
   const keywordsArray = Array.from(activeKeywords);
   const queryStr = `(${keywordsArray.map(kw => `"${kw}"`).join(' OR ')})`;
   
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(queryStr)}&mode=artlist&maxrecords=50&format=json&sort=DateDesc`;
 
+  console.log('🌍 [GDELT Fetch] Requesting URL:', url);
+
   const response = await fetch(url);
   
   if (!response.ok) {
+    console.error(`❌ [GDELT Fetch] Error: ${response.status} ${response.statusText}`);
     throw new Error(`GDELT API error: ${response.status} ${response.statusText}`);
   }
 
   const data = await response.json();
+  console.log('📦 [GDELT Fetch] Raw Response Data:', data);
   
   // GDELT might return empty object {} if no results
   if (!data || !data.articles || !Array.isArray(data.articles)) {
+    console.warn('⚠️ [GDELT Fetch] No articles found or unexpected format.');
     return [];
   }
 
@@ -99,5 +102,6 @@ export async function fetchGdeltNews(activeKeywords: Set<string>): Promise<Artic
     };
   });
 
+  console.log(`✅ [GDELT Fetch] Successfully mapped ${mappedArticles.length} articles.`);
   return mappedArticles;
 }
