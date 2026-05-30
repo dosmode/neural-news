@@ -15,7 +15,7 @@ export default function Home() {
   const { gradient } = useClustering(0, 0); 
 
   useEffect(() => {
-    setArticles(mockData.articles as Article[]);
+    setArticles(mockData.articles as unknown as Article[]);
   }, [setArticles]);
 
   return (
