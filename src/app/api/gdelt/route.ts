@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { XMLParser } from 'fast-xml-parser';
 
 // Server-side cache and lock
 let lastFetchTime = 0;
@@ -6,25 +7,49 @@ let cachedData: any = null;
 let lastQuery: string | null = null;
 let isFetching = false;
 
-const COOLDOWN_MS = 6000; // 6 seconds
+const COOLDOWN_MS = 3000;
+const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 
-// Fallback data when rate limited
 const mockFallback = {
   articles: [
     {
       url: "https://example.com/fallback-1",
       domain: "example.com",
-      title: "LIVE FEED PAUSED - GDELT RATE LIMIT EXCEEDED",
+      title: "뉴스 피드 로딩 중...",
       seendate: new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z',
     },
-    {
-      url: "https://example.com/fallback-2",
-      domain: "system.local",
-      title: "Showing Cached or Fallback Data. Please wait 6 seconds.",
-      seendate: new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z',
-    }
   ]
 };
+
+function parseRssToArticles(xml: string): { articles: any[] } {
+  const parsed = parser.parse(xml);
+  const items = parsed?.rss?.channel?.item;
+
+  if (!items) return { articles: [] };
+
+  const itemsArray = Array.isArray(items) ? items : [items];
+
+  const articles = itemsArray.map((item: any) => {
+    // Google News RSS: actual source URL is in <source url="...">
+    const sourceUrl = item.source?.['@_url'] || '';
+    const domain = sourceUrl
+      ? new URL(sourceUrl).hostname.replace(/^www\./, '')
+      : '';
+
+    const seendate = item.pubDate
+      ? new Date(item.pubDate).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+      : '';
+
+    return {
+      url: item.link || item.guid || '',
+      domain,
+      title: item.title || '',
+      seendate,
+    };
+  });
+
+  return { articles };
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -49,32 +74,43 @@ export async function GET(request: Request) {
   isFetching = true;
 
   try {
-    const gdeltUrl = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=50&format=json&sort=DateDesc`;
-    console.log('[API Route] Fetching from GDELT:', gdeltUrl);
-    
-    const response = await fetch(gdeltUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'NeuralNewsCurationMVP/1.0'
-      },
-    });
+    // Strip OR/parentheses for Google News — use space-separated keywords
+    const cleanQuery = query.replace(/[()]/g, '').replace(/ OR /g, ' ');
+    const newsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQuery)}&hl=en-US&gl=US&ceid=US:en`;
+    console.log('[API Route] Fetching from Google News RSS:', newsUrl);
 
-    console.log('[API Route] GDELT Status:', response.status);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error('[API Route] GDELT Error Text:', text);
-      if (response.status === 429) {
-        console.log('[API Route] Rate limited by GDELT. Providing fallback.');
-        lastFetchTime = Date.now(); 
-        return NextResponse.json(cachedData || mockFallback);
-      }
-      throw new Error(`GDELT API responded with status ${response.status}: ${text}`);
+    let response: Response;
+    try {
+      response = await fetch(newsUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NeuralNewsFeed/1.0)' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
     }
 
-    const data = await response.json();
-    
-    // Update Cache
+    console.log('[API Route] Google News Status:', response.status);
+
+    if (!response.ok) {
+      throw new Error(`Google News RSS responded with status ${response.status}`);
+    }
+
+    const xml = await response.text();
+
+    let data: { articles: any[] };
+    try {
+      data = parseRssToArticles(xml);
+    } catch (parseErr) {
+      console.warn('[API Route] RSS parse failed:', parseErr);
+      lastFetchTime = Date.now();
+      return NextResponse.json(cachedData || mockFallback);
+    }
+
+    console.log(`[API Route] Parsed ${data.articles.length} articles from Google News`);
+
     cachedData = data;
     lastQuery = query;
     lastFetchTime = Date.now();
@@ -82,7 +118,7 @@ export async function GET(request: Request) {
     return NextResponse.json(data);
   } catch (error: any) {
     console.error('[API Route] Caught Exception:', error);
-    lastFetchTime = Date.now(); 
+    lastFetchTime = Date.now();
     return NextResponse.json(cachedData || mockFallback);
   } finally {
     isFetching = false;

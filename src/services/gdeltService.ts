@@ -1,4 +1,4 @@
-import { Article } from '@/types';
+import { Article, KeywordDef } from '@/types';
 
 // Deterministic hash function for simple heuristics
 function hashString(str: string): number {
@@ -31,41 +31,38 @@ function getTypeHeuristic(title: string): 'breaking' | 'deep-dive' {
   return 'deep-dive';
 }
 
-// Pseudo-relevance Scoring
-function calculateRelevanceMap(title: string, activeKeywords: Set<string>): Record<string, number> {
+// Pseudo-relevance Scoring — matches against the keyword LABEL, keys the map by keyword ID
+function calculateRelevanceMap(title: string, activeKeywords: KeywordDef[]): Record<string, number> {
   const relevanceMap: Record<string, number> = {};
   const lowerTitle = title.toLowerCase();
-  
+
   let matchFound = false;
   activeKeywords.forEach(kw => {
-    // If the exact keyword is in the title, high relevance
-    if (lowerTitle.includes(kw.toLowerCase())) {
-      relevanceMap[kw] = 0.8 + (Math.random() * 0.2); // 0.8 to 1.0
+    // If the keyword's human label appears in the title, high relevance
+    if (lowerTitle.includes(kw.label.toLowerCase())) {
+      relevanceMap[kw.id] = 0.8 + (Math.random() * 0.2); // 0.8 to 1.0
       matchFound = true;
     } else {
       // Small background relevance so it still clusters somewhere if it was fetched via an OR query
-      relevanceMap[kw] = 0.1 + (Math.random() * 0.3); // 0.1 to 0.4
+      relevanceMap[kw.id] = 0.1 + (Math.random() * 0.3); // 0.1 to 0.4
     }
   });
 
-  // If no direct matches (GDELT matched on body, not title), boost the first keyword so it has an anchor
-  if (!matchFound && activeKeywords.size > 0) {
-    const firstKw = Array.from(activeKeywords)[0];
-    relevanceMap[firstKw] = 0.6;
+  // If no direct matches (matched on body, not title), anchor the first keyword
+  if (!matchFound && activeKeywords.length > 0) {
+    relevanceMap[activeKeywords[0].id] = 0.6;
   }
 
   return relevanceMap;
 }
 
-export async function fetchGdeltNews(activeKeywords: Set<string>): Promise<Article[]> {
-  if (activeKeywords.size === 0) {
+export async function fetchGdeltNews(activeKeywords: KeywordDef[]): Promise<Article[]> {
+  if (activeKeywords.length === 0) {
     return [];
   }
 
-  // Construct query: (keyword1 OR keyword2)
-  const keywordsArray = Array.from(activeKeywords);
-  // Remove surrounding quotes from keywords to prevent GDELT "phrase is too short" error
-  const queryStr = `(${keywordsArray.join(' OR ')})`;
+  // Construct query from human labels: (label1 OR label2)
+  const queryStr = `(${activeKeywords.map(k => k.label).join(' OR ')})`;
   
   // Use internal Next.js API route to bypass CORS
   const url = `/api/gdelt?query=${encodeURIComponent(queryStr)}`;

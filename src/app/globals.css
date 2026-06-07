@@ -18,3 +18,30 @@ body {
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Neural network "data flowing" edge animation */
+@keyframes neuralFlow {
+  from { stroke-dashoffset: 60; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.animate-neural-flow {
+  animation: neuralFlow 1.8s linear infinite;
+}
+
+/* Gentle ambient drift for article dots — subtle, not flashy */
+@keyframes dotFloat {
+  0%, 100% { transform: translate(0px, 0px); }
+  25%      { transform: translate(2px, -3px); }
+  50%      { transform: translate(-2px, -1px); }
+  75%      { transform: translate(1px, 2px); }
+}
+
+/* Hide scrollbars while keeping scroll behavior (used by the article strip) */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

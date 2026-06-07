@@ -36,20 +36,46 @@ export interface MappedPoint extends Article {
   y: number;
 }
 
+export interface DynamicFilterNode {
+  id: string;
+  label: string;
+  layer: 1 | 2;
+}
+
+export interface KeywordDef {
+  id: string;
+  label: string;
+}
+
+export type ClusterMode = 'sentiment' | 'topic';
+
+export type ViewMode = 'cluster' | 'timeline';
+
 export interface AppState {
+  keywords: KeywordDef[];
   activeKeywords: Set<string>;
   filterWeights: Record<string, number>;
+  dynamicFilterNodes: DynamicFilterNode[];
   articles: Article[];
   selectedArticleId: string | null;
-  currentGradient: string;
   isLoading: boolean;
   error: string | null;
-  
+  showClassificationField: boolean;
+  hydrated: boolean;
+  clusterMode: ClusterMode;
+  viewMode: ViewMode;
+
   // Actions
   toggleKeyword: (id: string) => void;
+  setClusterMode: (mode: ClusterMode) => void;
+  setViewMode: (mode: ViewMode) => void;
+  addKeyword: (label: string) => { ok: boolean; error?: string };
+  removeKeyword: (id: string) => void;
+  setKeywords: (keywords: KeywordDef[], activeIds: string[]) => void;
   setFilterWeight: (id: string, weight: number) => void;
   setSelectedArticle: (id: string | null) => void;
   setArticles: (articles: Article[]) => void;
   setIsLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
+  toggleClassificationField: () => void;
 }
