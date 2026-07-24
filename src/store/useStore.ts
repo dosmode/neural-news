@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AppState, DynamicFilterNode, KeywordDef } from '@/types';
+import { AppState, DynamicFilterNode, KeywordDef, SuggestionDef } from '@/types';
 import { slugify, validateNewKeyword, MAX_KEYWORDS } from '@/utils/keywordUtils';
 
 const KEYWORD_CATEGORY_MAP: Record<string, string> = {
@@ -53,13 +53,20 @@ function deriveFrom(activeKeywords: Set<string>, prevWeights: Record<string, num
   return { dynamicFilterNodes, filterWeights };
 }
 
+// Recursively collect all keyword ids to cascade-remove (depth-first)
+function collectCascadeIds(rootId: string, keywords: KeywordDef[]): string[] {
+  const children = keywords.filter(k => k.parentId === rootId).map(k => k.id);
+  return [rootId, ...children.flatMap(cid => collectCascadeIds(cid, keywords))];
+}
+
 const emptyDerived = deriveFrom(new Set(), {});
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set, get) => ({
   keywords: [],
   activeKeywords: new Set<string>(),
   filterWeights: emptyDerived.filterWeights,
   dynamicFilterNodes: emptyDerived.dynamicFilterNodes,
+  suggestions: [],
   articles: [],
   selectedArticleId: null,
   isLoading: false,
@@ -103,11 +110,17 @@ export const useStore = create<AppState>((set) => ({
   },
 
   removeKeyword: (id) => set((state) => {
+    const idsToRemove = new Set(collectCascadeIds(id, state.keywords));
+    const newKeywords = state.keywords.filter(k => !idsToRemove.has(k.id));
     const newActive = new Set(state.activeKeywords);
-    newActive.delete(id);
+    idsToRemove.forEach(rid => newActive.delete(rid));
+    const newSuggestions = state.suggestions.filter(
+      s => !idsToRemove.has(s.sourceKeywordId)
+    );
     return {
-      keywords: state.keywords.filter(k => k.id !== id),
+      keywords: newKeywords,
       activeKeywords: newActive,
+      suggestions: newSuggestions,
       ...deriveFrom(newActive, state.filterWeights),
     };
   }),
@@ -139,4 +152,65 @@ export const useStore = create<AppState>((set) => ({
   setClusterMode: (clusterMode) => set({ clusterMode }),
 
   setViewMode: (viewMode) => set({ viewMode }),
+
+  addSuggestions: (sourceKeywordId, labels) => set((state) => {
+    const existingLabels = new Set(
+      state.suggestions
+        .filter(s => s.sourceKeywordId === sourceKeywordId)
+        .map(s => s.label.toLowerCase())
+    );
+    const newSuggestions: SuggestionDef[] = labels
+      .filter(label => !existingLabels.has(label.toLowerCase()))
+      .map(label => ({
+        id: `${sourceKeywordId}-${slugify(label)}`,
+        label,
+        sourceKeywordId,
+        isDismissed: false,
+      }));
+    return { suggestions: [...state.suggestions, ...newSuggestions] };
+  }),
+
+  acceptSuggestion: (id) => {
+    let result: { ok: boolean; error?: string } = { ok: true };
+    set((state) => {
+      const suggestion = state.suggestions.find(s => s.id === id);
+      if (!suggestion) {
+        result = { ok: false, error: 'not-found' };
+        return {};
+      }
+      const v = validateNewKeyword(suggestion.label, state.keywords, MAX_KEYWORDS);
+      if (!v.ok) {
+        result = { ok: false, error: v.error };
+        return {};
+      }
+      const trimmed = suggestion.label.trim();
+      const slug = slugify(trimmed);
+      if (state.keywords.some(k => k.id === slug)) {
+        result = { ok: false, error: 'duplicate' };
+        return {};
+      }
+      const newKeyword: KeywordDef = {
+        id: slug,
+        label: trimmed,
+        parentId: suggestion.sourceKeywordId,
+      };
+      const newActive = new Set(state.activeKeywords);
+      newActive.add(slug);
+      // Remove the accepted suggestion from the list
+      const newSuggestions = state.suggestions.filter(s => s.id !== id);
+      return {
+        keywords: [...state.keywords, newKeyword],
+        activeKeywords: newActive,
+        suggestions: newSuggestions,
+        ...deriveFrom(newActive, state.filterWeights),
+      };
+    });
+    return result;
+  },
+
+  dismissSuggestion: (id) => set((state) => ({
+    suggestions: state.suggestions.map(s =>
+      s.id === id ? { ...s, isDismissed: true } : s
+    ),
+  })),
 }));

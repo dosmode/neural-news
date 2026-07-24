@@ -45,6 +45,14 @@ export interface DynamicFilterNode {
 export interface KeywordDef {
   id: string;
   label: string;
+  parentId?: string | null;
+}
+
+export interface SuggestionDef {
+  id: string;
+  label: string;
+  sourceKeywordId: string;
+  isDismissed: boolean;
 }
 
 export type ClusterMode = 'sentiment' | 'topic';
@@ -56,6 +64,7 @@ export interface AppState {
   activeKeywords: Set<string>;
   filterWeights: Record<string, number>;
   dynamicFilterNodes: DynamicFilterNode[];
+  suggestions: SuggestionDef[];
   articles: Article[];
   selectedArticleId: string | null;
   isLoading: boolean;
@@ -78,4 +87,7 @@ export interface AppState {
   setIsLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
   toggleClassificationField: () => void;
+  addSuggestions: (sourceKeywordId: string, labels: string[]) => void;
+  acceptSuggestion: (id: string) => { ok: boolean; error?: string };
+  dismissSuggestion: (id: string) => void;
 }

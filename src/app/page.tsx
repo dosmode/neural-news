@@ -3,7 +3,7 @@
 import React from 'react';
 import { useStore } from '@/store/useStore';
 
-import NeuralPanel from '@/components/neural/NeuralPanel';
+import ForceGraphPanel from '@/components/neural/ForceGraphPanel';
 import ArticleScatter from '@/components/output/ArticleScatter';
 import ArticleStrip from '@/components/output/ArticleStrip';
 import ArticleDetailPanel from '@/components/shared/ArticleDetailPanel';
@@ -55,7 +55,7 @@ export default function Home() {
 
       {/* Main: stacked on mobile, left neural panel + right output on desktop */}
       <div className="flex flex-col lg:flex-row lg:flex-1 lg:min-h-0 lg:overflow-hidden z-10">
-        <NeuralPanel className="w-full h-[300px] shrink-0 border-b border-white/[0.05] lg:w-[360px] lg:h-auto lg:border-b-0 lg:border-r" />
+        <ForceGraphPanel className="w-full h-[300px] shrink-0 border-b border-white/[0.05] lg:w-[360px] lg:h-auto lg:border-b-0 lg:border-r" />
 
         <div className="flex flex-col w-full lg:flex-1 lg:min-h-0 lg:min-w-0">
           <div className="relative w-full h-[55vh] min-h-[360px] lg:flex-1 lg:h-auto lg:min-h-0">
