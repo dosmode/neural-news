@@ -4,8 +4,14 @@ import { calculateTimeline } from '@/utils/timeline';
 
 export function useTimeline(width: number, height: number) {
   const articles = useStore((state) => state.articles);
-  return useMemo(
-    () => calculateTimeline(articles, width, height),
-    [articles, width, height]
-  );
+  const activeKeywords = useStore((state) => state.activeKeywords);
+  return useMemo(() => {
+    // Same visibility rule as the cluster view (calculateClustering): only
+    // articles relevant to an active keyword. Otherwise switching views
+    // silently changes which articles are shown.
+    const visible = articles.filter((a) =>
+      Object.keys(a.relevanceMap).some((kw) => activeKeywords.has(kw))
+    );
+    return calculateTimeline(visible, width, height);
+  }, [articles, activeKeywords, width, height]);
 }

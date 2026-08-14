@@ -102,7 +102,11 @@ export async function GET(request: Request) {
   try {
     // Google News RSS supports boolean OR (uppercase). Strip only parentheses.
     const cleanQuery = query.replace(/[()]/g, '').trim();
-    const newsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQuery)}&hl=en-US&gl=US&ceid=US:en`;
+    // Korean keywords get the Korean news feed — the US feed barely covers them.
+    const locale = /[가-힣]/.test(cleanQuery)
+      ? 'hl=ko&gl=KR&ceid=KR:ko'
+      : 'hl=en-US&gl=US&ceid=US:en';
+    const newsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQuery)}&${locale}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);

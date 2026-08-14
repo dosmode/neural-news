@@ -12,6 +12,7 @@ import {
   collectDescendants,
   computeCrossLinks,
   buildOverview,
+  restoreGraph,
   isLeaf,
   MAX_LIVE_NODES,
 } from '@/utils/graphTree';
@@ -21,6 +22,7 @@ import GraphLinkView from './GraphLinkView';
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 const NEWS_ACTIVE_CAP = 8; // cap active keywords sent to the news query
+const GRAPH_STORAGE_KEY = 'neural-news:graph:v1';
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 3;
 
@@ -150,6 +152,8 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   });
 
   const initializedRef = useRef(false);
+  const liveNodesRef = useRef(liveNodes);
+  liveNodesRef.current = liveNodes;
   const selectionCounter = useRef(0);
   const dragRef = useRef<{ id: string; startX: number; startY: number; moved: boolean } | null>(null);
   const panRef = useRef<{ startX: number; startY: number; vx: number; vy: number; moved: boolean } | null>(null);
@@ -172,21 +176,23 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     return () => ro.disconnect();
   }, []);
 
-  // Re-measure right after a fullscreen toggle (layout changes synchronously).
-  // Keep the user's zoom AND the world point at the panel center fixed by
-  // shifting the translation with the size delta — no jarring view reset.
+  // Re-measure right after a fullscreen toggle. Keep the user's zoom level but
+  // aim the view at the NEW canvas center: the simulation's center force pulls
+  // the node cloud there, so any offset based on old positions double-shifts.
+  // offsetWidth/Height ignore the FLIP transform mid-animation (rects don't).
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const prev = dimsRef.current;
-    const r = el.getBoundingClientRect();
-    dimsRef.current = { width: r.width, height: r.height };
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    if (w === 0) return;
+    dimsRef.current = { width: w, height: h };
     setDims(dimsRef.current);
-    if (prev.width > 0 && r.width > 0) {
-      const dx = (r.width - prev.width) / 2;
-      const dy = (r.height - prev.height) / 2;
-      setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
-    }
+    setView((v) => ({
+      k: v.k,
+      x: (w / 2) * (1 - v.k),
+      y: (h / 2) * (1 - v.k),
+    }));
   }, [fullscreen]);
 
   // ─── Sync active keyword set → store (recency priority) ─────────────────
@@ -200,10 +206,31 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     setKeywords(keywords, activeIds);
   }, [setKeywords]);
 
-  // ─── One-time overview initialization ──────────────────────────────────
+  // ─── One-time initialization: restore saved graph, else build overview ──
   useEffect(() => {
     if (initializedRef.current) return;
     if (dims.width === 0 || dims.height === 0) return;
+
+    // Restore the persisted graph structure (hierarchy + expansion +
+    // selection survive reloads instead of flattening into roots).
+    try {
+      const raw = window.localStorage.getItem(GRAPH_STORAGE_KEY);
+      if (raw) {
+        const restored = restoreGraph(JSON.parse(raw), dims.width, dims.height);
+        if (restored) {
+          initializedRef.current = true;
+          selectionCounter.current = Math.max(0, ...restored.nodes.map((n) => n.selectedAt ?? 0));
+          setLiveNodes(restored.nodes);
+          setLiveLinks(restored.links);
+          syncToStore(restored.nodes);
+          reheat();
+          return;
+        }
+      }
+    } catch {
+      /* corrupt storage → fall through to a fresh overview */
+    }
+
     const activeRoots = storeKeywords.filter((k) => activeKeywords.has(k.id));
     if (activeRoots.length === 0) return;
 
@@ -216,10 +243,59 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     reheat();
   }, [storeKeywords, activeKeywords, dims, syncToStore, reheat]);
 
-  // ─── Select (+ maybe expand/collapse) ───────────────────────────────────
+  // ─── Persist graph structure on every change (post-init) ───────────────
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    try {
+      window.localStorage.setItem(
+        GRAPH_STORAGE_KEY,
+        JSON.stringify({
+          nodes: liveNodes.map((n) => ({
+            id: n.id,
+            label: n.label,
+            depth: n.depth,
+            parentId: n.parentId,
+            expanded: n.expanded,
+            selectedAt: n.selectedAt ?? 0,
+          })),
+          // Only hierarchy links — cross links are derived at render time.
+          links: liveLinks.map((l) => ({
+            id: l.id,
+            source: linkSourceId(l),
+            target: linkTargetId(l),
+            type: l.type ?? 'hierarchy',
+          })),
+        })
+      );
+    } catch {
+      /* quota/serialization errors are non-fatal */
+    }
+  }, [liveNodes, liveLinks]);
+
+  // ─── Select (+ maybe expand/collapse, or toggle a leaf off) ─────────────
   const selectNode = useCallback((id: string) => {
     const node = liveNodes.find((n) => n.id === id);
     if (!node) return;
+
+    // Clicking an already-active LEAF deselects it (spec 015 FR-004): the only
+    // other way to drop a keyword from the news filter is deleting the node.
+    const isPlainLeaf = !node.hasChildren || (!node.expanded && liveNodes.length >= MAX_LIVE_NODES);
+    if (isPlainLeaf && (node.selectedAt ?? 0) > 0) {
+      const top = liveNodes
+        .slice()
+        .sort((a, b) => (b.selectedAt ?? 0) - (a.selectedAt ?? 0))
+        .slice(0, NEWS_ACTIVE_CAP)
+        .map((n) => n.id);
+      if (top.includes(node.id)) {
+        node.selectedAt = 0;
+        if (node.hasChildren && !node.expanded && liveNodes.length >= MAX_LIVE_NODES) showCapHint();
+        const newNodes = [...liveNodes];
+        setLiveNodes(newNodes);
+        syncToStore(newNodes);
+        reheat();
+        return;
+      }
+    }
 
     node.selectedAt = ++selectionCounter.current;
 

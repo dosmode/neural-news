@@ -6,6 +6,7 @@ import {
   collectDescendants,
   areRelated,
   computeCrossLinks,
+  restoreGraph,
   isLeaf,
   MAX_LIVE_NODES,
   MAX_CROSS_LINKS,
@@ -216,5 +217,64 @@ describe('computeCrossLinks', () => {
     const hierarchy: GraphLink[] = [{ id: 'ai-nvidia', source: ai, target: nvidia, type: 'hierarchy' }];
     const links = computeCrossLinks([ai, nvidia], hierarchy);
     expect(links).toHaveLength(0);
+  });
+});
+
+describe('restoreGraph', () => {
+  const saved = {
+    nodes: [
+      { id: 'ai', label: 'AI', depth: 0, parentId: null, expanded: true, selectedAt: 10 },
+      { id: 'openai', label: 'OpenAI', depth: 1, parentId: 'ai', expanded: false, selectedAt: 3 },
+      { id: 'oil', label: 'Oil', depth: 0, parentId: null, expanded: false, selectedAt: 7 },
+    ],
+    links: [
+      { id: 'ai-openai', source: 'ai', target: 'openai', type: 'hierarchy' as const },
+      { id: 'x-ai|oil', source: 'ai', target: 'oil', type: 'cross' as const },
+    ],
+  };
+
+  it('restores hierarchy, expansion, and selection recency', () => {
+    const restored = restoreGraph(saved, 800, 600)!;
+    expect(restored.nodes).toHaveLength(3);
+    const openai = restored.nodes.find((n) => n.id === 'openai')!;
+    expect(openai.depth).toBe(1);
+    expect(openai.parentId).toBe('ai');
+    expect(restored.nodes.find((n) => n.id === 'ai')!.expanded).toBe(true);
+    expect(restored.nodes.find((n) => n.id === 'ai')!.selectedAt).toBe(10);
+  });
+
+  it('drops cross links (derived at render time) but keeps hierarchy links', () => {
+    const restored = restoreGraph(saved, 800, 600)!;
+    expect(restored.links).toHaveLength(1);
+    expect(restored.links[0].id).toBe('ai-openai');
+  });
+
+  it('seeds every node with coordinates so the simulation can settle', () => {
+    const restored = restoreGraph(saved, 800, 600)!;
+    for (const n of restored.nodes) {
+      expect(typeof n.x).toBe('number');
+      expect(typeof n.y).toBe('number');
+    }
+  });
+
+  it('returns null for empty or corrupt input', () => {
+    expect(restoreGraph({ nodes: [], links: [] }, 800, 600)).toBeNull();
+    expect(restoreGraph(null as never, 800, 600)).toBeNull();
+  });
+
+  it('drops links whose endpoints are missing and dedupes node ids', () => {
+    const restored = restoreGraph(
+      {
+        nodes: [
+          { id: 'a', label: 'A', depth: 0, parentId: null, expanded: false },
+          { id: 'a', label: 'A dupe', depth: 0, parentId: null, expanded: false },
+        ],
+        links: [{ source: 'a', target: 'ghost' }],
+      },
+      800,
+      600
+    )!;
+    expect(restored.nodes).toHaveLength(1);
+    expect(restored.links).toHaveLength(0);
   });
 });

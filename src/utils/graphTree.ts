@@ -155,6 +155,88 @@ export function computeCrossLinks(
   return out;
 }
 
+// ─── Persistence ────────────────────────────────────────────────────────────
+
+export interface SavedGraph {
+  nodes: {
+    id: string;
+    label: string;
+    depth: number;
+    parentId: string | null;
+    expanded: boolean;
+    selectedAt?: number;
+  }[];
+  links: { id?: string; source: string; target: string; type?: 'hierarchy' | 'cross' }[];
+}
+
+/**
+ * Rebuild live graph state from a persisted structure: hierarchy, expansion
+ * and selection recency survive a reload instead of flattening every node
+ * into a root. Seeds positions (roots on a circle, children near parents) so
+ * one reheat settles the layout. Returns null for empty/corrupt input.
+ * Cross links are intentionally dropped — they are derived at render time.
+ */
+export function restoreGraph(
+  saved: SavedGraph,
+  width: number,
+  height: number
+): { nodes: GraphNode[]; links: GraphLink[] } | null {
+  if (!saved || !Array.isArray(saved.nodes) || saved.nodes.length === 0) return null;
+  const cx = width / 2;
+  const cy = height / 2;
+  const radius = Math.max(40, Math.min(width, height) * 0.28);
+
+  const sorted = [...saved.nodes].sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
+  const roots = sorted.filter((n) => !n.parentId);
+  const byId = new Map<string, GraphNode>();
+  const childCount = new Map<string, number>();
+  const nodes: GraphNode[] = [];
+
+  for (const s of sorted) {
+    if (!s?.id || byId.has(s.id)) continue;
+    let x: number;
+    let y: number;
+    const parent = s.parentId ? byId.get(s.parentId) : undefined;
+    if (!parent) {
+      const i = roots.findIndex((r) => r.id === s.id);
+      const angle = ((i < 0 ? nodes.length : i) / Math.max(1, roots.length)) * Math.PI * 2;
+      x = cx + Math.cos(angle) * radius;
+      y = cy + Math.sin(angle) * radius;
+    } else {
+      const k = (childCount.get(s.parentId as string) ?? 0) + 1;
+      childCount.set(s.parentId as string, k);
+      x = (parent.x ?? cx) + Math.cos(k * 2.4) * 36;
+      y = (parent.y ?? cy) + Math.sin(k * 2.4) * 36;
+    }
+    const node: GraphNode = {
+      id: s.id,
+      label: s.label ?? s.id,
+      depth: s.depth ?? 0,
+      parentId: s.parentId ?? null,
+      expanded: !!s.expanded,
+      hasChildren: !isLeaf(s.id),
+      selectedAt: s.selectedAt ?? 0,
+      x,
+      y,
+    };
+    byId.set(node.id, node);
+    nodes.push(node);
+  }
+  if (nodes.length === 0) return null;
+
+  const ids = new Set(nodes.map((n) => n.id));
+  const links: GraphLink[] = (saved.links ?? [])
+    .filter((l) => l && l.type !== 'cross' && ids.has(l.source) && ids.has(l.target))
+    .map((l) => ({
+      id: l.id ?? `${l.source}-${l.target}`,
+      source: l.source,
+      target: l.target,
+      type: 'hierarchy' as const,
+    }));
+
+  return { nodes, links };
+}
+
 /** Best-effort human label for a slug id (falls back to a title-cased slug). */
 function labelFor(id: string): string {
   // If the id appears as a child label anywhere, reuse that label's casing.

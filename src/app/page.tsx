@@ -93,8 +93,11 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main: stacked on mobile, left neural panel + right output on desktop */}
-      <div className="flex flex-col lg:flex-row lg:flex-1 lg:min-h-0 lg:overflow-hidden z-10">
+      {/* Main: stacked on mobile, left neural panel + right output on desktop.
+          NOTE: no z-index here — as a flex item it would create a stacking
+          context that traps the graph panel's fullscreen mode (fixed z-50)
+          BELOW the z-30 header, making the exit/zoom controls unclickable. */}
+      <div className="flex flex-col lg:flex-row lg:flex-1 lg:min-h-0 lg:overflow-hidden">
         <ForceGraphPanel className="w-full h-[300px] shrink-0 border-b border-white/[0.05] lg:w-[360px] lg:h-auto lg:border-b-0 lg:border-r" />
 
         <div className="flex flex-col w-full lg:flex-1 lg:min-h-0 lg:min-w-0">
