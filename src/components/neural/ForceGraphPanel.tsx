@@ -538,8 +538,19 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
       <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_50%_40%,rgba(0,243,255,0.05),transparent_60%)]" />
 
       {/* Title */}
-      <div className="absolute top-3 left-4 z-30 text-[9px] font-mono text-white/30 uppercase tracking-[0.2em] pointer-events-none">
-        Keyword Graph
+      <div className="absolute top-3 left-4 z-30 flex items-center gap-2 pointer-events-none">
+        <span className="text-[9px] font-mono text-white/30 uppercase tracking-[0.2em]">
+          Keyword Graph
+        </span>
+        {/* Immediate feedback for node clicks: the news query is refreshing */}
+        {isLoading && (
+          <span className="flex items-center gap-1.5 bg-black/70 border border-neon-blue/30 rounded-full pl-1.5 pr-2.5 py-0.5 backdrop-blur-md">
+            <span className="w-2 h-2 rounded-full border border-neon-blue/30 border-t-neon-blue animate-spin" />
+            <span className="text-[8px] font-mono text-neon-blue/90 uppercase tracking-widest">
+              Fetching
+            </span>
+          </span>
+        )}
       </div>
 
       {/* SVG canvas — background pointerdown pans; wheel zooms */}

@@ -312,7 +312,7 @@ export default function ArticleScatter() {
         )}
       </AnimatePresence>
 
-      {/* Initial loading */}
+      {/* Initial loading — full-area spinner (nothing else to show yet) */}
       {isLoading && points.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center z-20">
           <div className="flex flex-col items-center gap-4">
@@ -321,6 +321,17 @@ export default function ArticleScatter() {
               FETCHING LIVE DATA...
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Refreshing — keyword changed while articles are on screen: keep the
+          dots (dimmed) and surface a compact updating pill instead of nothing */}
+      {isLoading && points.length > 0 && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-black/75 border border-neon-blue/30 rounded-full pl-2.5 pr-3.5 py-1.5 backdrop-blur-md pointer-events-none shadow-[0_2px_16px_rgba(0,0,0,0.5)]">
+          <div className="w-3 h-3 rounded-full border-2 border-neon-blue/30 border-t-neon-blue animate-spin" />
+          <span className="text-neon-blue/90 font-mono text-[9px] uppercase tracking-widest">
+            Fetching live data…
+          </span>
         </div>
       )}
 
