@@ -5,38 +5,45 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 import { X } from 'lucide-react';
 import { HEADER_HEIGHT } from '@/utils/layout';
+import { useOverlayDismiss } from '@/hooks/useOverlayDismiss';
 
 export default function ArticleDetailPanel() {
   const selectedArticleId = useStore((state) => state.selectedArticleId);
   const articles = useStore((state) => state.articles);
+  const keywords = useStore((state) => state.keywords);
   const setSelectedArticle = useStore((state) => state.setSelectedArticle);
 
   const article = articles.find((a) => a.id === selectedArticleId);
 
-  const formattedDate = article?.seendate
-    ? (() => {
-        try {
-          return new Date(
-            article.seendate.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, '$1-$2-$3T$4:$5:$6Z')
-          ).toLocaleString();
-        } catch {
-          return article.seendate;
-        }
-      })()
-    : '';
+  useOverlayDismiss(!!article, () => setSelectedArticle(null));
+
+  const labelById = React.useMemo(
+    () => new Map(keywords.map((k) => [k.id, k.label])),
+    [keywords]
+  );
+
+  const formattedDate = (() => {
+    if (!article?.seendate) return '';
+    const parsed = new Date(
+      article.seendate.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, '$1-$2-$3T$4:$5:$6Z')
+    );
+    return isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
+  })();
 
   return (
     <AnimatePresence>
       {selectedArticleId && article && (
         <>
-          {/* Click-to-close backdrop (does not cover the neural panel visually — it's transparent) */}
+          {/* Backdrop. On mobile (sheet UX) it closes on tap; on desktop it is
+              visual-only so clicking another card/dot SWITCHES the article
+              instead of closing the panel (Esc / X still close). */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={() => setSelectedArticle(null)}
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-40 lg:pointer-events-none"
             style={{ background: 'rgba(0,0,0,0.25)' }}
           />
 
@@ -54,7 +61,8 @@ export default function ArticleDetailPanel() {
 
             <button
               onClick={() => setSelectedArticle(null)}
-              className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors z-10"
+              aria-label="Close article"
+              className="absolute top-2 right-2 p-2.5 text-white/40 hover:text-white transition-colors z-10"
             >
               <X size={22} />
             </button>
@@ -86,7 +94,7 @@ export default function ArticleDetailPanel() {
               <div className="flex flex-wrap gap-1.5">
                 {Object.keys(article.relevanceMap).map((kw) => (
                   <span key={kw} className="text-[9px] font-mono text-white/30 bg-white/[0.04] px-2 py-1 rounded">
-                    #{kw.toUpperCase()}
+                    #{(labelById.get(kw) ?? kw).toUpperCase()}
                   </span>
                 ))}
               </div>

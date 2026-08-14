@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { Article } from '@/types';
 
@@ -19,6 +19,7 @@ function ArticleCard({ article, isSelected, onClick }: { article: Article; isSel
   return (
     <div
       onClick={onClick}
+      data-aid={article.id}
       className={`
         w-[200px] shrink-0 h-full rounded-lg cursor-pointer p-3
         flex flex-col gap-1.5 transition-all duration-200
@@ -49,6 +50,28 @@ export default function ArticleStrip({ className = '', style }: { className?: st
     [articles]
   );
 
+  // Horizontal wheel-scroll needs a native non-passive listener: React's
+  // onWheel is passive (preventDefault is ignored + logs a console error) and
+  // would double-scroll the page on small screens.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY + e.deltaX;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Selecting an article elsewhere (scatter dot click) brings its card into view.
+  useEffect(() => {
+    if (!selectedArticleId || !scrollRef.current) return;
+    const card = scrollRef.current.querySelector(`[data-aid="${CSS.escape(selectedArticleId)}"]`);
+    card?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }, [selectedArticleId]);
+
   return (
     <div style={style} className={`flex flex-col bg-black/40 border-t border-white/[0.05] ${className}`}>
       <div className="px-4 py-1.5 text-[9px] font-mono text-white/25 uppercase tracking-widest shrink-0 border-b border-white/[0.04]">
@@ -63,12 +86,6 @@ export default function ArticleStrip({ className = '', style }: { className?: st
         <div
           ref={scrollRef}
           className="h-full flex gap-2 overflow-x-auto scrollbar-hide px-3 py-2"
-          onWheel={(e) => {
-            if (scrollRef.current) {
-              e.preventDefault();
-              scrollRef.current.scrollLeft += e.deltaY;
-            }
-          }}
         >
           {isLoading && articles.length === 0 &&
             Array.from({ length: 6 }).map((_, i) => (

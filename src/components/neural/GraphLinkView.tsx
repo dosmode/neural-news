@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { motion } from 'framer-motion';
 import { GraphLink, GraphNode } from '@/utils/graphTree';
 
 interface GraphLinkViewProps {
@@ -36,16 +37,25 @@ export default function GraphLinkView({ link, isHighlighted, isDimmed }: GraphLi
   const width = isHighlighted ? 1.6 : isCross ? 0.7 : 1;
 
   return (
-    <line
-      x1={s.x}
-      y1={s.y}
-      x2={t.x}
-      y2={t.y}
-      stroke={stroke}
-      strokeWidth={width}
-      strokeOpacity={opacity}
-      strokeDasharray={isCross ? '3 4' : undefined}
-      className="transition-[stroke-opacity] duration-200"
-    />
+    // motion.g so links fade in/out with their nodes under AnimatePresence
+    // (nodes animate 0.35s; an abrupt link vanish reads as a glitch).
+    <motion.g
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+    >
+      <line
+        x1={s.x}
+        y1={s.y}
+        x2={t.x}
+        y2={t.y}
+        stroke={stroke}
+        strokeWidth={width}
+        strokeOpacity={opacity}
+        strokeDasharray={isCross ? '3 4' : undefined}
+        className="transition-[stroke-opacity] duration-200"
+      />
+    </motion.g>
   );
 }

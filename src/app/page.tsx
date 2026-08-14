@@ -1,14 +1,17 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/store/useStore';
 
 import ForceGraphPanel from '@/components/neural/ForceGraphPanel';
 import ArticleScatter from '@/components/output/ArticleScatter';
 import ArticleStrip from '@/components/output/ArticleStrip';
 import ArticleDetailPanel from '@/components/shared/ArticleDetailPanel';
+import OnboardingTour from '@/components/shared/OnboardingTour';
 import { useGdeltFetch } from '@/hooks/useGdeltFetch';
 import { useKeywordInit } from '@/hooks/useKeywordInit';
+
+const TOUR_DONE_KEY = 'neural-news:tour-done';
 
 function StatusIndicator() {
   const isLoading = useStore((s) => s.isLoading);
@@ -32,6 +35,35 @@ export default function Home() {
   useKeywordInit();
   useGdeltFetch();
 
+  // First-visit onboarding: auto-open once, re-openable from the header "?".
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    try {
+      if (!window.localStorage.getItem(TOUR_DONE_KEY)) {
+        const t = setTimeout(() => {
+          // Re-check: the user may have opened and dismissed the tour (via the
+          // "?" button) before this delayed auto-open fires.
+          try {
+            if (!window.localStorage.getItem(TOUR_DONE_KEY)) setTourOpen(true);
+          } catch {
+            /* ignore */
+          }
+        }, 900);
+        return () => clearTimeout(t);
+      }
+    } catch {
+      /* storage unavailable → skip auto-open */
+    }
+  }, []);
+  const closeTour = useCallback(() => {
+    try {
+      window.localStorage.setItem(TOUR_DONE_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+    setTourOpen(false);
+  }, []);
+
   return (
     <main className="flex flex-col bg-[#050508] text-white min-h-screen overflow-y-auto lg:h-screen lg:overflow-hidden">
       {/* Ambient background glow */}
@@ -50,6 +82,14 @@ export default function Home() {
           <StatusIndicator />
           <span className="hidden sm:inline text-white/25">SOURCE: GOOGLE NEWS RSS</span>
           <span className="hidden sm:inline text-white/25">MVP v1.0.0</span>
+          <button
+            onClick={() => setTourOpen(true)}
+            aria-label="Show onboarding tour"
+            title="How it works"
+            className="w-7 h-7 rounded-full border border-white/15 text-white/40 hover:text-neon-blue hover:border-neon-blue/50 transition-colors flex items-center justify-center text-[12px]"
+          >
+            ?
+          </button>
         </div>
       </header>
 
@@ -66,6 +106,7 @@ export default function Home() {
       </div>
 
       <ArticleDetailPanel />
+      <OnboardingTour open={tourOpen} onClose={closeTour} />
     </main>
   );
 }

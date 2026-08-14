@@ -11,6 +11,21 @@ describe('slugify', () => {
   it('handles single word', () => {
     expect(slugify('Bitcoin')).toBe('bitcoin');
   });
+  it('preserves Korean labels as distinct ids', () => {
+    expect(slugify('인공지능')).toBe('인공지능');
+    expect(slugify('주식 시장')).toBe('주식-시장');
+    expect(slugify('인공지능')).not.toBe(slugify('경제'));
+  });
+  it('mixes scripts without dropping either', () => {
+    expect(slugify('AI 반도체')).toBe('ai-반도체');
+  });
+  it('never returns an empty id, even for symbol-only labels', () => {
+    const a = slugify('!!!');
+    const b = slugify('???');
+    expect(a).not.toBe('');
+    expect(b).not.toBe('');
+    expect(a).not.toBe(b);
+  });
 });
 
 describe('normalizeForCompare', () => {

@@ -20,6 +20,11 @@ function radiusFor(depth: number): number {
   return Math.max(6, 14 - depth * 2.5);
 }
 
+// On touch devices hover never sticks, so hover-only affordances are
+// unreachable — surface them permanently instead (spec 011 FR-004/005).
+const isCoarsePointer =
+  typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+
 export default function GraphNodeView({
   node,
   isHovered,
@@ -102,13 +107,16 @@ export default function GraphNodeView({
         {node.label}
       </text>
 
-      {/* Hover-revealed remove button */}
-      {isHovered && onRemove && (
+      {/* Remove button: hover-revealed on mouse; always visible on user-added
+          roots for touch devices (hover is unreachable there) */}
+      {onRemove && (isHovered || (isCoarsePointer && isRoot)) && (
         <g
           transform={`translate(${r + 4}, ${-r - 4})`}
           onPointerDown={(e) => { e.stopPropagation(); onRemove(node.id); }}
           style={{ cursor: 'pointer' }}
         >
+          {/* Invisible enlarged hit area so the tap target isn't 12px */}
+          <circle r={isCoarsePointer ? 14 : 8} fill="transparent" />
           <circle r={6} fill="#06060b" stroke="rgba(255,255,255,0.4)" strokeWidth={0.75} />
           <line x1={-2.2} y1={-2.2} x2={2.2} y2={2.2} stroke="#ff5577" strokeWidth={1.2} strokeLinecap="round" />
           <line x1={2.2} y1={-2.2} x2={-2.2} y2={2.2} stroke="#ff5577" strokeWidth={1.2} strokeLinecap="round" />

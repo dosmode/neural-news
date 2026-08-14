@@ -1,25 +1,40 @@
 import { NextResponse } from 'next/server';
 import { XMLParser } from 'fast-xml-parser';
 
-// Server-side cache and lock
-let lastFetchTime = 0;
-let cachedData: any = null;
-let lastQuery: string | null = null;
-let isFetching = false;
+// Server-side per-query cache + a global fetch lock.
+// NOTE: module-level state only holds within a single warm instance; on
+// serverless multi-instance deploys each instance keeps its own cache.
+const cache = new Map<string, { data: { articles: any[] }; time: number }>();
+const CACHE_TTL_MS = 60000; // full results
+const EMPTY_TTL_MS = 10000; // empty results expire fast so a hiccup doesn't stick
+const MAX_CACHE_ENTRIES = 20;
 
+let lastFetchTime = 0;
+let isFetching = false;
 const COOLDOWN_MS = 3000;
+
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 
-const mockFallback = {
-  articles: [
-    {
-      url: "https://example.com/fallback-1",
-      domain: "example.com",
-      title: "뉴스 피드 로딩 중...",
-      seendate: new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z',
-    },
-  ]
-};
+function getCached(query: string): { articles: any[] } | null {
+  const entry = cache.get(query);
+  if (!entry) return null;
+  const ttl = entry.data.articles.length > 0 ? CACHE_TTL_MS : EMPTY_TTL_MS;
+  if (Date.now() - entry.time > ttl) {
+    cache.delete(query);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCached(query: string, data: { articles: any[] }) {
+  cache.set(query, { data, time: Date.now() });
+  // Evict oldest entries beyond the cap
+  while (cache.size > MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
 
 function parseRssToArticles(xml: string): { articles: any[] } {
   const parsed = parser.parse(xml);
@@ -28,25 +43,35 @@ function parseRssToArticles(xml: string): { articles: any[] } {
   if (!items) return { articles: [] };
 
   const itemsArray = Array.isArray(items) ? items : [items];
+  const articles: any[] = [];
 
-  const articles = itemsArray.map((item: any) => {
-    // Google News RSS: actual source URL is in <source url="...">
-    const sourceUrl = item.source?.['@_url'] || '';
-    const domain = sourceUrl
-      ? new URL(sourceUrl).hostname.replace(/^www\./, '')
-      : '';
+  // Per-item guard: one malformed item must not discard the whole batch.
+  for (const item of itemsArray) {
+    try {
+      const sourceUrl = item.source?.['@_url'] || '';
+      let domain = '';
+      try {
+        domain = sourceUrl ? new URL(sourceUrl).hostname.replace(/^www\./, '') : '';
+      } catch {
+        domain = '';
+      }
 
-    const seendate = item.pubDate
-      ? new Date(item.pubDate).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
-      : '';
+      let seendate = '';
+      if (item.pubDate) {
+        const d = new Date(item.pubDate);
+        if (!isNaN(d.getTime())) {
+          seendate = d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+        }
+      }
 
-    return {
-      url: item.link || item.guid || '',
-      domain,
-      title: item.title || '',
-      seendate,
-    };
-  });
+      const url = item.link || item.guid || '';
+      if (!url || !item.title) continue;
+
+      articles.push({ url, domain, title: item.title, seendate });
+    } catch {
+      continue;
+    }
+  }
 
   return { articles };
 }
@@ -59,25 +84,25 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 });
   }
 
-  const now = Date.now();
-
-  if (cachedData && lastQuery === query && (now - lastFetchTime) < 60000) {
-    console.log('[API Route] Returning cached data for query:', query);
-    return NextResponse.json(cachedData);
+  const cached = getCached(query);
+  if (cached) {
+    return NextResponse.json(cached);
   }
 
-  if (isFetching || (now - lastFetchTime < COOLDOWN_MS)) {
-    console.warn('[API Route] Cooldown active. Returning cached or fallback data.');
-    return NextResponse.json(cachedData || mockFallback);
+  const now = Date.now();
+  if (isFetching || now - lastFetchTime < COOLDOWN_MS) {
+    // No cache for THIS query and the upstream is rate-locked: tell the client
+    // to retry shortly instead of serving another query's articles.
+    const retryAfterMs = Math.max(500, COOLDOWN_MS - (now - lastFetchTime));
+    return NextResponse.json({ articles: [], pending: true, retryAfterMs });
   }
 
   isFetching = true;
 
   try {
-    // Strip OR/parentheses for Google News — use space-separated keywords
-    const cleanQuery = query.replace(/[()]/g, '').replace(/ OR /g, ' ');
+    // Google News RSS supports boolean OR (uppercase). Strip only parentheses.
+    const cleanQuery = query.replace(/[()]/g, '').trim();
     const newsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQuery)}&hl=en-US&gl=US&ceid=US:en`;
-    console.log('[API Route] Fetching from Google News RSS:', newsUrl);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -92,34 +117,26 @@ export async function GET(request: Request) {
       clearTimeout(timeoutId);
     }
 
-    console.log('[API Route] Google News Status:', response.status);
-
     if (!response.ok) {
       throw new Error(`Google News RSS responded with status ${response.status}`);
     }
 
     const xml = await response.text();
+    const data = parseRssToArticles(xml);
 
-    let data: { articles: any[] };
-    try {
-      data = parseRssToArticles(xml);
-    } catch (parseErr) {
-      console.warn('[API Route] RSS parse failed:', parseErr);
-      lastFetchTime = Date.now();
-      return NextResponse.json(cachedData || mockFallback);
-    }
-
-    console.log(`[API Route] Parsed ${data.articles.length} articles from Google News`);
-
-    cachedData = data;
-    lastQuery = query;
+    setCached(query, data);
     lastFetchTime = Date.now();
 
     return NextResponse.json(data);
   } catch (error: any) {
-    console.error('[API Route] Caught Exception:', error);
+    console.error('[API Route] Fetch failed:', error?.message || error);
     lastFetchTime = Date.now();
-    return NextResponse.json(cachedData || mockFallback);
+    // Surface a real error so the client can show its ERROR state —
+    // never fabricate placeholder articles.
+    return NextResponse.json(
+      { articles: [], error: 'upstream_failed', message: String(error?.message || error) },
+      { status: 502 }
+    );
   } finally {
     isFetching = false;
   }

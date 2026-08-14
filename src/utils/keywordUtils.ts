@@ -1,13 +1,23 @@
 export const MAX_KEYWORDS = 8;
 export const MAX_LABEL_LEN = 32;
 
-/** Slugify a label into a stable keyword id. */
+/** Slugify a label into a stable keyword id. Unicode-aware: keeps letters and
+ * digits in any script (한글, kanji, …) so non-ASCII labels get distinct ids. */
 export function slugify(label: string): string {
-  return label
+  const slug = label
+    .normalize('NFC')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+  if (slug) return slug;
+  // Label had no letters/digits at all (e.g. "!!!"): fall back to a stable
+  // hash so two such labels never collide on the empty string.
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = ((hash << 5) - hash + label.charCodeAt(i)) | 0;
+  }
+  return 'kw-' + Math.abs(hash).toString(36);
 }
 
 /** Normalised form for duplicate comparison. */

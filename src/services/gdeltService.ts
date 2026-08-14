@@ -31,6 +31,12 @@ function getTypeHeuristic(title: string): 'breaking' | 'deep-dive' {
   return 'deep-dive';
 }
 
+// Deterministic 0..1 jitter from a seed string, so the same article + keyword
+// always lands in the same spot (no reshuffle on refetch).
+function jitter(seed: string): number {
+  return (hashString(seed) % 1000) / 1000;
+}
+
 // Pseudo-relevance Scoring — matches against the keyword LABEL, keys the map by keyword ID
 function calculateRelevanceMap(title: string, activeKeywords: KeywordDef[]): Record<string, number> {
   const relevanceMap: Record<string, number> = {};
@@ -40,11 +46,11 @@ function calculateRelevanceMap(title: string, activeKeywords: KeywordDef[]): Rec
   activeKeywords.forEach(kw => {
     // If the keyword's human label appears in the title, high relevance
     if (lowerTitle.includes(kw.label.toLowerCase())) {
-      relevanceMap[kw.id] = 0.8 + (Math.random() * 0.2); // 0.8 to 1.0
+      relevanceMap[kw.id] = 0.8 + jitter(title + '|' + kw.id) * 0.2; // 0.8 to 1.0
       matchFound = true;
     } else {
       // Small background relevance so it still clusters somewhere if it was fetched via an OR query
-      relevanceMap[kw.id] = 0.1 + (Math.random() * 0.3); // 0.1 to 0.4
+      relevanceMap[kw.id] = 0.1 + jitter(title + '|' + kw.id) * 0.3; // 0.1 to 0.4
     }
   });
 
@@ -56,39 +62,48 @@ function calculateRelevanceMap(title: string, activeKeywords: KeywordDef[]): Rec
   return relevanceMap;
 }
 
-export async function fetchGdeltNews(activeKeywords: KeywordDef[]): Promise<Article[]> {
+export interface NewsFetchResult {
+  articles: Article[];
+  /** Server is rate-locked and had no cache for this query: retry shortly. */
+  pending?: boolean;
+  retryAfterMs?: number;
+}
+
+export async function fetchGdeltNews(activeKeywords: KeywordDef[]): Promise<NewsFetchResult> {
   if (activeKeywords.length === 0) {
-    return [];
+    return { articles: [] };
   }
 
   // Construct query from human labels: (label1 OR label2)
   const queryStr = `(${activeKeywords.map(k => k.label).join(' OR ')})`;
-  
+
   // Use internal Next.js API route to bypass CORS
   const url = `/api/gdelt?query=${encodeURIComponent(queryStr)}`;
 
-  console.log('🌍 [GDELT Fetch] Requesting Internal Proxy URL:', url);
-
   const response = await fetch(url);
-  
+
   if (!response.ok) {
-    console.error(`❌ [GDELT Fetch] Error: ${response.status} ${response.statusText}`);
-    throw new Error(`GDELT API error: ${response.status} ${response.statusText}`);
+    throw new Error(`News API error: ${response.status} ${response.statusText}`);
   }
 
   const data = await response.json();
-  console.log('📦 [GDELT Fetch] Raw Response Data:', data);
-  
-  // GDELT might return empty object {} if no results
-  if (!data || !data.articles || !Array.isArray(data.articles)) {
-    console.warn('⚠️ [GDELT Fetch] No articles found or unexpected format.');
-    return [];
+
+  if (data?.pending) {
+    return { articles: [], pending: true, retryAfterMs: data.retryAfterMs ?? 1500 };
   }
 
-  // Transform to our Article format
-  const mappedArticles: Article[] = data.articles.map((item: any): Article => {
-    return {
-      id: item.url, // URL is typically unique
+  if (!data || !data.articles || !Array.isArray(data.articles)) {
+    return { articles: [] };
+  }
+
+  // Transform to our Article format, deduping by URL so React keys stay unique.
+  const seenUrls = new Set<string>();
+  const mappedArticles: Article[] = [];
+  for (const item of data.articles) {
+    if (!item?.url || seenUrls.has(item.url)) continue;
+    seenUrls.add(item.url);
+    mappedArticles.push({
+      id: item.url, // URL is unique after dedup
       title: item.title,
       summary: `Source: ${item.domain}`, // Fallback as artlist lacks body text
       sentiment: getSentimentHeuristic(item.title),
@@ -97,10 +112,9 @@ export async function fetchGdeltNews(activeKeywords: KeywordDef[]): Promise<Arti
       url: item.url,
       domain: item.domain,
       seendate: item.seendate,
-      socialimage: item.socialimage
-    };
-  });
+      socialimage: item.socialimage,
+    });
+  }
 
-  console.log(`✅ [GDELT Fetch] Successfully mapped ${mappedArticles.length} articles.`);
-  return mappedArticles;
+  return { articles: mappedArticles };
 }

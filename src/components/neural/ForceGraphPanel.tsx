@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 import { useForceSimulation } from '@/hooks/useForceSimulation';
+import { useOverlayDismiss } from '@/hooks/useOverlayDismiss';
 import {
   GraphNode,
   GraphLink,
@@ -113,6 +114,20 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const [fullscreen, setFullscreen] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
+  const [capHint, setCapHint] = useState(false);
+  const capHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Esc / mobile back gesture leaves fullscreen instead of leaving the app.
+  useOverlayDismiss(fullscreen, () => setFullscreen(false));
+
+  const showCapHint = useCallback(() => {
+    setCapHint(true);
+    if (capHintTimer.current) clearTimeout(capHintTimer.current);
+    capHintTimer.current = setTimeout(() => setCapHint(false), 2600);
+  }, []);
+  useEffect(() => () => {
+    if (capHintTimer.current) clearTimeout(capHintTimer.current);
+  }, []);
 
   const storeKeywords = useStore((s) => s.keywords);
   const activeKeywords = useStore((s) => s.activeKeywords);
@@ -142,12 +157,14 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   viewRef.current = view;
 
   // ─── Measure container ──────────────────────────────────────────────────
+  const dimsRef = useRef(dims);
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const update = () => {
       const r = el.getBoundingClientRect();
-      setDims({ width: r.width, height: r.height });
+      dimsRef.current = { width: r.width, height: r.height };
+      setDims(dimsRef.current);
     };
     update();
     const ro = new ResizeObserver(update);
@@ -156,12 +173,20 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   }, []);
 
   // Re-measure right after a fullscreen toggle (layout changes synchronously).
+  // Keep the user's zoom AND the world point at the panel center fixed by
+  // shifting the translation with the size delta — no jarring view reset.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const prev = dimsRef.current;
     const r = el.getBoundingClientRect();
-    setDims({ width: r.width, height: r.height });
-    setView({ x: 0, y: 0, k: 1 }); // recenter view on the freshly-sized canvas
+    dimsRef.current = { width: r.width, height: r.height };
+    setDims(dimsRef.current);
+    if (prev.width > 0 && r.width > 0) {
+      const dx = (r.width - prev.width) / 2;
+      const dy = (r.height - prev.height) / 2;
+      setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
+    }
   }, [fullscreen]);
 
   // ─── Sync active keyword set → store (recency priority) ─────────────────
@@ -198,6 +223,11 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
 
     node.selectedAt = ++selectionCounter.current;
 
+    // Expansion blocked by the node cap: tell the user why nothing happened.
+    if (node.hasChildren && !node.expanded && liveNodes.length >= MAX_LIVE_NODES) {
+      showCapHint();
+    }
+
     if (node.hasChildren && !node.expanded && liveNodes.length < MAX_LIVE_NODES) {
       const liveIds = new Set(liveNodes.map((n) => n.id));
       const children = getChildren(node, liveIds);
@@ -227,6 +257,7 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
       const newLinks = liveLinks.filter(
         (l) => !descendants.has(linkSourceId(l)) && !descendants.has(linkTargetId(l))
       );
+      setHoveredId((h) => (h && descendants.has(h) ? null : h));
       setLiveNodes(newNodes);
       setLiveLinks(newLinks);
       syncToStore(newNodes);
@@ -249,6 +280,8 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     const newLinks = liveLinks.filter(
       (l) => !toRemove.has(linkSourceId(l)) && !toRemove.has(linkTargetId(l))
     );
+    // Clear hover so a removed node can't leave the graph stuck dimmed.
+    setHoveredId((h) => (h && toRemove.has(h) ? null : h));
     setLiveNodes(newNodes);
     setLiveLinks(newLinks);
     syncToStore(newNodes);
@@ -411,8 +444,10 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   const transform = `translate(${view.x}, ${view.y}) scale(${view.k})`;
 
   return (
-    <div
+    <motion.div
       ref={containerRef}
+      layout
+      transition={{ layout: { duration: 0.28, ease: [0.4, 0, 0.2, 1] } }}
       style={fullscreen ? undefined : style}
       className={
         fullscreen
@@ -436,14 +471,17 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
         onPointerDown={handleBgPointerDown}
       >
         <g transform={transform}>
-          {/* Links (hierarchy + cross) */}
-          {allLinks.map((l) => {
-            const s = linkSourceId(l);
-            const t = linkTargetId(l);
-            const highlighted = !!hoveredId && (s === hoveredId || t === hoveredId);
-            const dimmed = !!hoveredId && !highlighted;
-            return <GraphLinkView key={l.id} link={l} isHighlighted={highlighted} isDimmed={dimmed} />;
-          })}
+          {/* Links (hierarchy + cross) — AnimatePresence so links fade out
+              alongside their collapsing nodes instead of vanishing abruptly */}
+          <AnimatePresence>
+            {allLinks.map((l) => {
+              const s = linkSourceId(l);
+              const t = linkTargetId(l);
+              const highlighted = !!hoveredId && (s === hoveredId || t === hoveredId);
+              const dimmed = !!hoveredId && !highlighted;
+              return <GraphLinkView key={l.id} link={l} isHighlighted={highlighted} isDimmed={dimmed} />;
+            })}
+          </AnimatePresence>
 
           {/* Nodes */}
           <AnimatePresence>
@@ -502,10 +540,25 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
 
       {/* Hint */}
       {liveNodes.length > 0 && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 text-[8px] font-mono text-white/20 uppercase tracking-wider pointer-events-none whitespace-nowrap">
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 text-[8px] font-mono text-white/20 uppercase tracking-wider pointer-events-none whitespace-nowrap hidden sm:block">
           Scroll · zoom   ·   Drag bg · pan   ·   Click · expand
         </div>
       )}
+
+      {/* Node-cap toast: expansion was silently impossible before; now say why */}
+      <AnimatePresence>
+        {capHint && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
+            className="absolute top-10 left-1/2 -translate-x-1/2 z-40 px-3 py-1.5 rounded-md bg-black/80 border border-neon-red/40 text-neon-red/90 text-[10px] font-mono uppercase tracking-wider backdrop-blur-md pointer-events-none whitespace-nowrap"
+          >
+            Graph is full — collapse or remove nodes first
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AddRootControl onAdd={addRoot} />
 
@@ -513,6 +566,6 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
       {isLoading && (
         <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-neon-blue/70 to-transparent animate-pulse z-30" />
       )}
-    </div>
+    </motion.div>
   );
 }

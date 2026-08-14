@@ -40,12 +40,21 @@ export function useGdeltFetch() {
       globalLastFetchTime = Date.now();
 
       try {
-        const articles = await fetchGdeltNews(active);
-        if (isMounted) setArticles(articles);
+        const result = await fetchGdeltNews(active);
+        if (!isMounted) return;
+        if (result.pending) {
+          // Server was rate-locked with no cache for this query: retry shortly,
+          // keeping the current articles and the loading state on screen.
+          timer = setTimeout(executeFetch, (result.retryAfterMs ?? 1500) + 300);
+          return;
+        }
+        setArticles(result.articles);
+        setIsLoading(false);
       } catch (err: any) {
-        if (isMounted) setError(err.message || 'Failed to fetch data');
-      } finally {
-        if (isMounted) setIsLoading(false);
+        if (isMounted) {
+          setError(err.message || 'Failed to fetch data');
+          setIsLoading(false);
+        }
       }
     };
 
