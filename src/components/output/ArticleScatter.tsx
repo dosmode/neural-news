@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useClustering } from '@/hooks/useClustering';
 import { useTimeline } from '@/hooks/useTimeline';
 import { useStore } from '@/store/useStore';
 import { MappedPoint } from '@/types';
 import ClassificationField from './ClassificationField';
+import FilterPanel from './FilterPanel';
 import { fieldIntensity } from '@/utils/sentimentField';
+import { computeEmphasisMap } from '@/utils/emphasis';
 
 const CARD_W = 230;
 const CARD_H = 96;
@@ -78,7 +80,7 @@ export default function ArticleScatter() {
   const [hoveredPoint, setHoveredPoint] = useState<MappedPoint | null>(null);
 
   const { points: clusterPoints, clusters } = useClustering(dimensions.width, dimensions.height);
-  const { points: timelinePoints, ticks } = useTimeline(dimensions.width, dimensions.height);
+  const { points: timelinePoints, ticks, undatedCount } = useTimeline(dimensions.width, dimensions.height);
   const setSelectedArticle = useStore((state) => state.setSelectedArticle);
   const isLoading = useStore((state) => state.isLoading);
   const error = useStore((state) => state.error);
@@ -89,10 +91,21 @@ export default function ArticleScatter() {
   const viewMode = useStore((state) => state.viewMode);
   const setViewMode = useStore((state) => state.setViewMode);
   const sentimentWeight = useStore((state) => state.filterWeights['sentiment'] ?? 0.5);
+  const filterWeights = useStore((state) => state.filterWeights);
+  const articles = useStore((state) => state.articles);
+  const activeKeywords = useStore((state) => state.activeKeywords);
+  const keywords = useStore((state) => state.keywords);
 
   const intensity = fieldIntensity(sentimentWeight);
   const isTimeline = viewMode === 'timeline';
   const points = isTimeline ? timelinePoints : clusterPoints;
+
+  // Spec 012: filter weights → per-dot size/brightness emphasis. Neutral
+  // weights (0.5) leave every dot at { scale 1, opacity 1 }.
+  const emphasisMap = useMemo(
+    () => computeEmphasisMap(articles, activeKeywords, filterWeights, keywords),
+    [articles, activeKeywords, filterWeights, keywords]
+  );
 
   useEffect(() => {
     const el = containerRef.current;
@@ -187,6 +200,9 @@ export default function ArticleScatter() {
           </button>
         )}
 
+        {/* Filter weight sliders (spec 012) */}
+        <FilterPanel />
+
         {/* Article count */}
         {points.length > 0 && (
           <div className="text-sm font-mono text-white/45 pointer-events-none">
@@ -203,15 +219,16 @@ export default function ArticleScatter() {
             const h = hashId(point.id);
             const floatDur = 5 + (h % 30) / 10; // 5.0–7.9s
             const floatDelay = (h % 40) / 10; // 0–3.9s
+            const emph = emphasisMap.get(point.id) ?? { scale: 1, opacity: 1 };
             return (
               <motion.div
                 key={point.id}
                 initial={{ opacity: 0, scale: 0 }}
                 animate={{
-                  opacity: isLoading ? 0.35 : 1,
+                  opacity: isLoading ? 0.35 : emph.opacity,
                   x: point.x - 12,
                   y: point.y - 12,
-                  scale: isHovered ? 1.6 : 1,
+                  scale: isHovered ? 1.6 : emph.scale,
                   zIndex: isHovered ? 40 : 1,
                 }}
                 exit={{ opacity: 0, scale: 0 }}
@@ -297,6 +314,13 @@ export default function ArticleScatter() {
           <div className="absolute left-5 z-20 text-[8px] font-mono text-white/20 uppercase tracking-widest pointer-events-none" style={{ bottom: 22 }}>
             ◀ older · newer ▶
           </div>
+          {/* Articles without a parseable date can't sit on a time axis —
+              say so instead of silently hiding them */}
+          {undatedCount > 0 && (
+            <div className="absolute right-5 z-20 text-[8px] font-mono text-white/25 uppercase tracking-widest pointer-events-none" style={{ bottom: 22 }}>
+              {undatedCount} undated hidden
+            </div>
+          )}
         </>
       )}
 

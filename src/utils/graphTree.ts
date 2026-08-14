@@ -53,21 +53,6 @@ function linkTargetId(link: GraphLink): string {
 }
 
 /**
- * Build the initial root node(s) for the graph from the active keyword ids.
- * Root nodes have depth 0 and no parent.
- */
-export function buildInitialNodes(activeKeywordIds: string[]): GraphNode[] {
-  return activeKeywordIds.map((id) => ({
-    id,
-    label: labelFor(id),
-    depth: 0,
-    parentId: null,
-    expanded: false,
-    hasChildren: !isLeaf(id),
-  }));
-}
-
-/**
  * Return the child nodes for a given parent, derived from the adjacency map,
  * excluding any ids already present in the live graph (dedup).
  */
@@ -110,16 +95,39 @@ export function collectDescendants(nodeId: string, links: GraphLink[]): Set<stri
   return descendants;
 }
 
+const TOKEN_STOPWORDS = new Set(['the', 'a', 'an', 'of', 'and', 'or', 'for', 'in', 'on']);
+
+/** Meaningful word tokens of a slug id, naively singularized ("stocks"→"stock"). */
+function tokensOf(id: string): Set<string> {
+  return new Set(
+    id
+      .split('-')
+      .map((t) => t.replace(/s$/, ''))
+      .filter((t) => t.length >= 2 && !TOKEN_STOPWORDS.has(t))
+  );
+}
+
 /**
- * Whether two keyword ids are related per the adjacency map (bidirectional
- * union): true if either keyword lists the other as a child. False for self.
+ * Whether two keyword ids are related. Two sources of relation:
+ * 1. The curated adjacency map (bidirectional union): either lists the other.
+ * 2. Token overlap between the ids ("stock" ↔ "stock-market",
+ *    "south-korea" ↔ "korea-stocks") — so USER-ADDED keywords, which the
+ *    curated map knows nothing about, still grow cross links.
+ * False for self.
  */
 export function areRelated(idA: string, idB: string): boolean {
   if (idA === idB) return false;
   const aKids = KEYWORD_SUGGESTIONS_MAP[idA] ?? [];
   if (aKids.some((label) => slugify(label) === idB)) return true;
   const bKids = KEYWORD_SUGGESTIONS_MAP[idB] ?? [];
-  return bKids.some((label) => slugify(label) === idA);
+  if (bKids.some((label) => slugify(label) === idA)) return true;
+
+  const ta = tokensOf(idA);
+  if (ta.size === 0) return false;
+  for (const t of tokensOf(idB)) {
+    if (ta.has(t)) return true;
+  }
+  return false;
 }
 
 /** Unordered pair key so {a,b} and {b,a} collapse to one. */

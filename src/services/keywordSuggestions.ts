@@ -1,8 +1,5 @@
-import { KeywordDef, SuggestionDef } from '@/types';
-import { slugify } from '@/utils/keywordUtils';
-import { TRENDING_POOL } from './trendingService';
-
-export const SUGGESTIONS_PER_KEYWORD = 5;
+// Curated keyword adjacency data. This map is the single source of truth for
+// the force graph's expand-children and cross-link relations (graphTree.ts).
 
 // Curated adjacency map: keyword slug → related keyword labels
 export const KEYWORD_SUGGESTIONS_MAP: Record<string, string[]> = {
@@ -37,49 +34,3 @@ export const KEYWORD_SUGGESTIONS_MAP: Record<string, string[]> = {
   'defi': ['Ethereum', 'Crypto', 'Yield Farming', 'Stablecoins', 'Smart Contracts', 'Web3'],
   'real-estate': ['Interest Rates', 'Mortgage', 'Housing Market', 'Fed Rate', 'Inflation', 'REITs'],
 };
-
-/**
- * Returns up to SUGGESTIONS_PER_KEYWORD suggestion labels for a given keyword,
- * excluding keywords already active and suggestions already shown or dismissed.
- */
-export function getSuggestionsFor(
-  keywordId: string,
-  existingKeywords: KeywordDef[],
-  existingSuggestions: SuggestionDef[]
-): string[] {
-  const activeIds = new Set(existingKeywords.map((k) => k.id));
-  const dismissedLabels = new Set(
-    existingSuggestions
-      .filter((s) => s.sourceKeywordId === keywordId && s.isDismissed)
-      .map((s) => s.label.toLowerCase())
-  );
-  const shownLabels = new Set(
-    existingSuggestions
-      .filter((s) => s.sourceKeywordId === keywordId)
-      .map((s) => s.label.toLowerCase())
-  );
-
-  const candidates = KEYWORD_SUGGESTIONS_MAP[keywordId] ?? [];
-
-  const filtered = candidates.filter((label) => {
-    const slug = slugify(label);
-    return (
-      !activeIds.has(slug) &&
-      !dismissedLabels.has(label.toLowerCase()) &&
-      !shownLabels.has(label.toLowerCase())
-    );
-  });
-
-  if (filtered.length >= 3) {
-    return filtered.slice(0, SUGGESTIONS_PER_KEYWORD);
-  }
-
-  // Fallback: pull from TRENDING_POOL excluding active keywords
-  const fallback = TRENDING_POOL
-    .filter((kw) => !activeIds.has(kw.id) && kw.id !== keywordId)
-    .map((kw) => kw.label)
-    .filter((label) => !dismissedLabels.has(label.toLowerCase()) && !shownLabels.has(label.toLowerCase()));
-
-  const combined = [...new Set([...filtered, ...fallback])];
-  return combined.slice(0, SUGGESTIONS_PER_KEYWORD);
-}

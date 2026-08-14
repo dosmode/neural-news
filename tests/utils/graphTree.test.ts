@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildInitialNodes,
   buildOverview,
   getChildren,
   collectDescendants,
@@ -25,21 +24,6 @@ describe('isLeaf', () => {
 
   it('returns false for a keyword that has children', () => {
     expect(isLeaf('ai')).toBe(false);
-  });
-});
-
-describe('buildInitialNodes', () => {
-  it('creates depth-0 root nodes with null parent', () => {
-    const nodes = buildInitialNodes(['ai', 'bitcoin']);
-    expect(nodes).toHaveLength(2);
-    expect(nodes[0].depth).toBe(0);
-    expect(nodes[0].parentId).toBeNull();
-    expect(nodes[0].expanded).toBe(false);
-  });
-
-  it('marks hasChildren correctly', () => {
-    const nodes = buildInitialNodes(['ai']);
-    expect(nodes[0].hasChildren).toBe(true);
   });
 });
 
@@ -178,6 +162,23 @@ describe('areRelated', () => {
 
   it('is false for self', () => {
     expect(areRelated('ai', 'ai')).toBe(false);
+  });
+
+  it('relates user-added keywords that share a word token', () => {
+    expect(areRelated('stock', 'stock-market')).toBe(true);
+    expect(areRelated('south-korea', 'korea-stocks')).toBe(true);
+  });
+
+  it('singularizes tokens so stock ↔ bank-stocks connect', () => {
+    expect(areRelated('stock', 'bank-stocks')).toBe(true);
+  });
+
+  it('relates Korean keywords sharing a token', () => {
+    expect(areRelated('주식', '주식-시장')).toBe(true);
+  });
+
+  it('does not relate keywords with no shared meaningful token', () => {
+    expect(areRelated('south-korea', 'stock-market')).toBe(false);
   });
 });
 

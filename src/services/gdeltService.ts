@@ -112,7 +112,6 @@ export async function fetchGdeltNews(activeKeywords: KeywordDef[]): Promise<News
       url: item.url,
       domain: item.domain,
       seendate: item.seendate,
-      socialimage: item.socialimage,
     });
   }
 

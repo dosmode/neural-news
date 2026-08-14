@@ -1,23 +1,3 @@
-export interface KeywordNodeData {
-  id: string;
-  label: string;
-  isActive: boolean;
-  type: 'input';
-}
-
-export interface FilterNodeData {
-  id: string;
-  label: string;
-  type: 'hidden';
-  weight: number; // 0.0 to 1.0
-}
-
-export interface ConnectionData {
-  source: string;
-  target: string;
-  weight: number;
-}
-
 export interface Article {
   id: string;
   title: string;
@@ -28,7 +8,6 @@ export interface Article {
   url: string;
   domain: string;
   seendate: string;
-  socialimage?: string;
 }
 
 export interface MappedPoint extends Article {
@@ -36,23 +15,10 @@ export interface MappedPoint extends Article {
   y: number;
 }
 
-export interface DynamicFilterNode {
-  id: string;
-  label: string;
-  layer: 1 | 2;
-}
-
 export interface KeywordDef {
   id: string;
   label: string;
   parentId?: string | null;
-}
-
-export interface SuggestionDef {
-  id: string;
-  label: string;
-  sourceKeywordId: string;
-  isDismissed: boolean;
 }
 
 export type ClusterMode = 'sentiment' | 'topic';
@@ -63,8 +29,6 @@ export interface AppState {
   keywords: KeywordDef[];
   activeKeywords: Set<string>;
   filterWeights: Record<string, number>;
-  dynamicFilterNodes: DynamicFilterNode[];
-  suggestions: SuggestionDef[];
   articles: Article[];
   selectedArticleId: string | null;
   isLoading: boolean;
@@ -75,11 +39,8 @@ export interface AppState {
   viewMode: ViewMode;
 
   // Actions
-  toggleKeyword: (id: string) => void;
   setClusterMode: (mode: ClusterMode) => void;
   setViewMode: (mode: ViewMode) => void;
-  addKeyword: (label: string) => { ok: boolean; error?: string };
-  removeKeyword: (id: string) => void;
   setKeywords: (keywords: KeywordDef[], activeIds: string[]) => void;
   setFilterWeight: (id: string, weight: number) => void;
   setSelectedArticle: (id: string | null) => void;
@@ -87,7 +48,4 @@ export interface AppState {
   setIsLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
   toggleClassificationField: () => void;
-  addSuggestions: (sourceKeywordId: string, labels: string[]) => void;
-  acceptSuggestion: (id: string) => { ok: boolean; error?: string };
-  dismissSuggestion: (id: string) => void;
 }

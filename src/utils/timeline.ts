@@ -29,9 +29,9 @@ export function calculateTimeline(
   articles: Article[],
   width: number,
   height: number
-): { points: MappedPoint[]; ticks: TimeTick[] } {
+): { points: MappedPoint[]; ticks: TimeTick[]; undatedCount: number } {
   if (articles.length === 0 || width === 0 || height === 0) {
-    return { points: [], ticks: [] };
+    return { points: [], ticks: [], undatedCount: 0 };
   }
 
   // Dedup by URL, parse times, drop undated, sort ascending
@@ -41,7 +41,9 @@ export function calculateTimeline(
     .filter((d): d is { a: Article; t: number } => d.t !== null)
     .sort((p, q) => p.t - q.t);
 
-  if (dated.length === 0) return { points: [], ticks: [] };
+  const undatedCount = dedup.length - dated.length;
+
+  if (dated.length === 0) return { points: [], ticks: [], undatedCount };
 
   let min = dated[0].t;
   let max = dated[dated.length - 1].t;
@@ -74,5 +76,5 @@ export function calculateTimeline(
     return { x: x(t), label };
   });
 
-  return { points, ticks };
+  return { points, ticks, undatedCount };
 }
