@@ -8,6 +8,7 @@ import ArticleScatter from '@/components/output/ArticleScatter';
 import ArticleStrip from '@/components/output/ArticleStrip';
 import ArticleDetailPanel from '@/components/shared/ArticleDetailPanel';
 import OnboardingTour from '@/components/shared/OnboardingTour';
+import MobileTabBar, { MobileTab } from '@/components/shared/MobileTabBar';
 import { useGdeltFetch } from '@/hooks/useGdeltFetch';
 import { useKeywordInit } from '@/hooks/useKeywordInit';
 
@@ -34,6 +35,10 @@ function StatusIndicator() {
 export default function Home() {
   useKeywordInit();
   useGdeltFetch();
+
+  // Mobile shows one surface at a time via the bottom tab bar; desktop shows
+  // all three side by side (the tab state is simply ignored at lg and up).
+  const [mobileTab, setMobileTab] = useState<MobileTab>('graph');
 
   // First-visit onboarding: auto-open once, re-openable from the header "?".
   const [tourOpen, setTourOpen] = useState(false);
@@ -65,7 +70,7 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="flex flex-col bg-[#050508] text-white min-h-screen overflow-y-auto lg:h-screen lg:overflow-hidden">
+    <main className="flex flex-col bg-[#050508] text-white h-dvh overflow-hidden">
       {/* Ambient background glow */}
       <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_30%_20%,rgba(0,243,255,0.04),transparent_55%)]" />
       <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_80%_80%,rgba(188,19,254,0.03),transparent_55%)]" />
@@ -93,21 +98,38 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main: stacked on mobile, left neural panel + right output on desktop.
+      {/* Main: one tab-selected surface at a time on mobile (full height),
+          left neural panel + right output side by side on desktop.
           NOTE: no z-index here — as a flex item it would create a stacking
           context that traps the graph panel's fullscreen mode (fixed z-50)
           BELOW the z-30 header, making the exit/zoom controls unclickable. */}
-      <div className="flex flex-col lg:flex-row lg:flex-1 lg:min-h-0 lg:overflow-hidden">
-        <ForceGraphPanel className="w-full h-[300px] shrink-0 border-b border-white/[0.05] lg:w-[360px] lg:h-auto lg:border-b-0 lg:border-r" />
+      <div
+        className="flex flex-col lg:flex-row flex-1 min-h-0 lg:overflow-hidden pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0"
+      >
+        <ForceGraphPanel
+          className={`${mobileTab === 'graph' ? 'block' : 'hidden'} lg:block w-full flex-1 min-h-0 border-white/[0.05] lg:flex-none lg:w-[360px] lg:h-auto lg:border-r`}
+        />
 
-        <div className="flex flex-col w-full lg:flex-1 lg:min-h-0 lg:min-w-0">
-          <div className="relative w-full h-[55vh] min-h-[360px] lg:flex-1 lg:h-auto lg:min-h-0">
+        <div
+          className={`${mobileTab === 'graph' ? 'hidden' : 'flex'} lg:flex flex-col w-full flex-1 min-h-0 lg:min-w-0`}
+        >
+          <div
+            className={`relative w-full ${
+              mobileTab === 'map' ? 'flex-1 min-h-0' : 'hidden'
+            } lg:block lg:flex-1 lg:h-auto lg:min-h-0`}
+          >
             <ArticleScatter />
           </div>
-          <ArticleStrip className="shrink-0 h-[180px]" />
+          <ArticleStrip
+            mobileVertical={mobileTab === 'feed'}
+            className={`${
+              mobileTab === 'feed' ? 'flex flex-1 min-h-0' : 'hidden'
+            } lg:flex lg:flex-none lg:h-[180px]`}
+          />
         </div>
       </div>
 
+      <MobileTabBar tab={mobileTab} onChange={setMobileTab} />
       <ArticleDetailPanel />
       <OnboardingTour open={tourOpen} onClose={closeTour} />
     </main>

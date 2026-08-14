@@ -99,6 +99,9 @@ export default function ArticleScatter() {
     if (!el) return;
     const update = () => {
       const rect = el.getBoundingClientRect();
+      // Hidden (mobile tab switched away) measures 0×0 — keep the last real
+      // dims so the layout doesn't recompute against a zero-sized canvas.
+      if (rect.width === 0 || rect.height === 0) return;
       setDimensions({ width: rect.width, height: rect.height });
     };
     update();

@@ -4,7 +4,17 @@ import React, { useRef, useMemo, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { Article } from '@/types';
 
-function ArticleCard({ article, isSelected, onClick }: { article: Article; isSelected: boolean; onClick: () => void }) {
+function ArticleCard({
+  article,
+  isSelected,
+  onClick,
+  vertical,
+}: {
+  article: Article;
+  isSelected: boolean;
+  onClick: () => void;
+  vertical: boolean;
+}) {
   const sentimentBorder =
     article.sentiment === 'positive'
       ? 'border-l-neon-blue'
@@ -21,7 +31,8 @@ function ArticleCard({ article, isSelected, onClick }: { article: Article; isSel
       onClick={onClick}
       data-aid={article.id}
       className={`
-        w-[200px] shrink-0 h-full rounded-lg cursor-pointer p-3
+        ${vertical ? 'w-full min-h-[80px] lg:w-[200px] lg:h-full lg:min-h-0' : 'w-[200px] h-full'}
+        shrink-0 rounded-lg cursor-pointer p-3
         flex flex-col gap-1.5 transition-all duration-200
         bg-white/[0.025] hover:bg-white/[0.05]
         border border-white/[0.07] hover:border-white/[0.15]
@@ -38,7 +49,16 @@ function ArticleCard({ article, isSelected, onClick }: { article: Article; isSel
   );
 }
 
-export default function ArticleStrip({ className = '', style }: { className?: string; style?: React.CSSProperties }) {
+export default function ArticleStrip({
+  className = '',
+  style,
+  mobileVertical = false,
+}: {
+  className?: string;
+  style?: React.CSSProperties;
+  /** Mobile feed tab: render as a full-height vertical list (desktop stays a horizontal strip). */
+  mobileVertical?: boolean;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const articles = useStore((s) => s.articles);
   const selectedArticleId = useStore((s) => s.selectedArticleId);
@@ -79,17 +99,24 @@ export default function ArticleStrip({ className = '', style }: { className?: st
       </div>
 
       <div className="relative flex-1 min-h-0">
-        {/* Edge fade gradients */}
-        <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-black/80 to-transparent pointer-events-none z-10" />
-        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-black/80 to-transparent pointer-events-none z-10" />
+        {/* Edge fade gradients (horizontal strip only) */}
+        <div className={`${mobileVertical ? 'hidden lg:block' : ''} absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-black/80 to-transparent pointer-events-none z-10`} />
+        <div className={`${mobileVertical ? 'hidden lg:block' : ''} absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-black/80 to-transparent pointer-events-none z-10`} />
 
         <div
           ref={scrollRef}
-          className="h-full flex gap-2 overflow-x-auto scrollbar-hide px-3 py-2"
+          className={`h-full flex gap-2 scrollbar-hide px-3 py-2 ${
+            mobileVertical
+              ? 'flex-col overflow-y-auto overflow-x-hidden lg:flex-row lg:overflow-x-auto lg:overflow-y-hidden'
+              : 'overflow-x-auto'
+          }`}
         >
           {isLoading && articles.length === 0 &&
             Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="w-[200px] shrink-0 h-full rounded-lg bg-white/[0.015] animate-pulse" />
+              <div
+                key={i}
+                className={`${mobileVertical ? 'w-full min-h-[80px] lg:w-[200px] lg:h-full lg:min-h-0' : 'w-[200px] h-full'} shrink-0 rounded-lg bg-white/[0.015] animate-pulse`}
+              />
             ))}
 
           {!isLoading && articles.length === 0 && (
@@ -104,6 +131,7 @@ export default function ArticleStrip({ className = '', style }: { className?: st
               article={article}
               isSelected={article.id === selectedArticleId}
               onClick={() => setSelectedArticle(article.id)}
+              vertical={mobileVertical}
             />
           ))}
         </div>

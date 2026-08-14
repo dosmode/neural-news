@@ -167,6 +167,9 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     if (!el) return;
     const update = () => {
       const r = el.getBoundingClientRect();
+      // Hidden (mobile tab switched away) measures 0×0 — keep the last real
+      // dims so the simulation doesn't collapse toward a zero-sized canvas.
+      if (r.width === 0 || r.height === 0) return;
       dimsRef.current = { width: r.width, height: r.height };
       setDims(dimsRef.current);
     };
