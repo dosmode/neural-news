@@ -87,9 +87,13 @@ export default function ArticleDetailPanel() {
                 {article.title}
               </h2>
 
-              <p className="text-white/60 leading-relaxed text-sm">
-                {article.summary}
-              </p>
+              {/* RSS gives no body text; don't render the "Source: …" filler
+                  (the domain is already shown in the meta row below) */}
+              {article.summary && !article.summary.startsWith('Source: ') && (
+                <p className="text-white/60 leading-relaxed text-sm">
+                  {article.summary}
+                </p>
+              )}
 
               <div className="flex flex-wrap gap-1.5">
                 {Object.keys(article.relevanceMap).map((kw) => (

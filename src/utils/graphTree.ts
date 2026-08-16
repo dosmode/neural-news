@@ -53,15 +53,25 @@ function linkTargetId(link: GraphLink): string {
 }
 
 /**
- * Return the child nodes for a given parent, derived from the adjacency map,
- * excluding any ids already present in the live graph (dedup).
+ * Return the child nodes for a given parent, derived from the curated
+ * adjacency map plus any dynamically discovered (crawled) children, excluding
+ * ids already present in the live graph (dedup, curated labels first).
  */
-export function getChildren(parent: GraphNode, liveNodeIds: Set<string>): GraphNode[] {
-  const childLabels = KEYWORD_SUGGESTIONS_MAP[parent.id] ?? [];
+export function getChildren(
+  parent: GraphNode,
+  liveNodeIds: Set<string>,
+  dynamicChildren?: Record<string, string[]>
+): GraphNode[] {
+  const childLabels = [
+    ...(KEYWORD_SUGGESTIONS_MAP[parent.id] ?? []),
+    ...(dynamicChildren?.[parent.id] ?? []),
+  ];
   const result: GraphNode[] = [];
+  const added = new Set<string>();
   for (const label of childLabels) {
     const id = slugify(label);
-    if (liveNodeIds.has(id)) continue; // already on the graph
+    if (liveNodeIds.has(id) || added.has(id)) continue; // already on the graph
+    added.add(id);
     result.push({
       id,
       label,
@@ -131,18 +141,52 @@ export function areRelated(idA: string, idB: string): boolean {
 }
 
 /** Unordered pair key so {a,b} and {b,a} collapse to one. */
-function pairKey(a: string, b: string): string {
+export function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 /**
+ * Data-driven relations: two keywords are empirically related when the same
+ * article's title matches BOTH (relevanceMap high band, ≥ 0.8) in at least
+ * `minCount` articles. This links keywords the curated map and token overlap
+ * can't see — e.g. "Samsung" ↔ "South Korea" via shared Korean coverage.
+ * Returns a Set of pairKey() strings.
+ */
+export function computeCooccurrencePairs(
+  articles: { relevanceMap: Record<string, number> }[],
+  liveIds: Set<string>,
+  minCount = 2
+): Set<string> {
+  const counts = new Map<string, number>();
+  for (const a of articles) {
+    const matched = Object.entries(a.relevanceMap)
+      .filter(([id, v]) => v >= 0.8 && liveIds.has(id))
+      .map(([id]) => id);
+    for (let i = 0; i < matched.length; i++) {
+      for (let j = i + 1; j < matched.length; j++) {
+        const k = pairKey(matched[i], matched[j]);
+        counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
+    }
+  }
+  const out = new Set<string>();
+  counts.forEach((c, k) => {
+    if (c >= minCount) out.add(k);
+  });
+  return out;
+}
+
+/**
  * Cross-links among the live nodes: a line between any two related nodes that
- * aren't already joined by a hierarchy link. Deduped by unordered pair and
- * capped at MAX_CROSS_LINKS for visual density.
+ * aren't already joined by a hierarchy link. Relations come from the curated
+ * map + token overlap (areRelated) plus optional data-driven pairs
+ * (computeCooccurrencePairs). Deduped by unordered pair and capped at
+ * MAX_CROSS_LINKS for visual density.
  */
 export function computeCrossLinks(
   nodes: GraphNode[],
-  hierarchyLinks: GraphLink[]
+  hierarchyLinks: GraphLink[],
+  extraPairs?: Set<string>
 ): GraphLink[] {
   const existing = new Set(
     hierarchyLinks.map((l) => pairKey(linkSourceId(l), linkTargetId(l)))
@@ -155,7 +199,7 @@ export function computeCrossLinks(
       const b = ids[j];
       const key = pairKey(a, b);
       if (existing.has(key)) continue; // already a hierarchy link (FR-005)
-      if (!areRelated(a, b)) continue;
+      if (!areRelated(a, b) && !extraPairs?.has(key)) continue;
       out.push({ id: `x-${key}`, source: a, target: b, type: 'cross' });
       if (out.length >= MAX_CROSS_LINKS) return out; // density cap (FR-010)
     }

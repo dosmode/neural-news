@@ -12,13 +12,33 @@ function hashString(str: string): number {
 }
 
 // Fallback Sentiment Heuristic
+// Word-list sentiment (English + Korean). A lexicon heuristic, not ML — but
+// unlike the old title-hash version the label actually reflects the headline.
+const POSITIVE_WORDS = [
+  'surge', 'soar', 'rally', 'rallies', 'record high', 'gain', 'jump', 'boost',
+  'wins', 'beat', 'beats', 'growth', 'rise', 'rises', 'breakthrough',
+  'success', 'profit', 'strong', 'recovery', 'upgrade', 'bullish', 'expands',
+  'milestone', 'award', 'approve', 'approved',
+  '호조', '상승', '급등', '최고치', '돌파', '성공', '흑자', '수익', '성장',
+  '개선', '회복', '호재', '달성', '강세', '수상', '승인', '확대',
+] as const;
+const NEGATIVE_WORDS = [
+  'crash', 'plunge', 'plummet', 'fall', 'falls', 'drop', 'drops', 'loss',
+  'losses', 'fail', 'fails', 'crisis', 'fear', 'fears', 'risk', 'risks',
+  'warn', 'warns', 'warning', 'layoff', 'layoffs', 'decline', 'slump',
+  'weak', 'worst', 'recession', 'downgrade', 'bearish', 'concern', 'tumble',
+  'sink', 'sinks', 'lawsuit', 'fraud', 'ban', 'banned', 'shutdown',
+  '하락', '급락', '최저', '적자', '손실', '위기', '우려', '부진', '침체',
+  '경고', '악재', '약세', '감소', '소송', '사기', '금지', '중단', '파산',
+] as const;
+
 function getSentimentHeuristic(title: string): 'positive' | 'negative' | 'neutral' {
-  const hash = hashString(title);
-  const mod = hash % 100;
-  
-  // Basic heuristic: 30% positive, 30% negative, 40% neutral
-  if (mod < 30) return 'positive';
-  if (mod < 60) return 'negative';
+  const lower = title.toLowerCase();
+  let score = 0;
+  for (const w of POSITIVE_WORDS) if (lower.includes(w)) score += 1;
+  for (const w of NEGATIVE_WORDS) if (lower.includes(w)) score -= 1;
+  if (score > 0) return 'positive';
+  if (score < 0) return 'negative';
   return 'neutral';
 }
 

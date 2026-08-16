@@ -11,18 +11,31 @@ import {
   getChildren,
   collectDescendants,
   computeCrossLinks,
+  computeCooccurrencePairs,
   buildOverview,
   restoreGraph,
   isLeaf,
   MAX_LIVE_NODES,
 } from '@/utils/graphTree';
 import { slugify } from '@/utils/keywordUtils';
+import { extractRelatedTerms } from '@/utils/relatedTerms';
 import GraphNodeView from './GraphNodeView';
 import GraphLinkView from './GraphLinkView';
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 const NEWS_ACTIVE_CAP = 8; // cap active keywords sent to the news query
 const GRAPH_STORAGE_KEY = 'neural-news:graph:v1';
+const DYNAMIC_CHILDREN_KEY = 'neural-news:dynamic-children:v1';
+
+function loadDynamicChildren(): Record<string, string[]> {
+  try {
+    const raw = window.localStorage.getItem(DYNAMIC_CHILDREN_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 3;
 
@@ -135,12 +148,80 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   const activeKeywords = useStore((s) => s.activeKeywords);
   const setKeywords = useStore((s) => s.setKeywords);
   const isLoading = useStore((s) => s.isLoading);
+  const articles = useStore((s) => s.articles);
+
+  // Crawled related-keyword lists (label arrays keyed by parent slug),
+  // persisted so a pre-crawl survives reloads.
+  const dynamicChildrenRef = useRef<Record<string, string[]>>({});
+  useEffect(() => {
+    dynamicChildrenRef.current = loadDynamicChildren();
+  }, []);
+
+  const saveDynamicChildren = useCallback((parentId: string, labels: string[]) => {
+    dynamicChildrenRef.current = { ...dynamicChildrenRef.current, [parentId]: labels };
+    try {
+      window.localStorage.setItem(DYNAMIC_CHILDREN_KEY, JSON.stringify(dynamicChildrenRef.current));
+    } catch {
+      /* non-fatal */
+    }
+  }, []);
+
+  // Pre-crawl related keywords for a node the curated map doesn't know:
+  // fetch its news (same cached endpoint the feed uses), mine co-occurring
+  // terms from the titles, persist them, and flip the node to expandable —
+  // the standard purple affordance, no new UI.
+  const discoverRelated = useCallback(async (nodeId: string, label: string, attempt = 0) => {
+    try {
+      const res = await fetch(`/api/gdelt?query=${encodeURIComponent(label)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.pending) {
+        if (attempt < 2) {
+          setTimeout(() => discoverRelated(nodeId, label, attempt + 1), (data.retryAfterMs ?? 1500) + 500);
+        }
+        return;
+      }
+      const titles: string[] = (data?.articles ?? [])
+        .map((a: { title?: string }) => a.title)
+        .filter(Boolean);
+      if (titles.length === 0) return;
+      const terms = extractRelatedTerms(titles, label);
+      if (terms.length === 0) return;
+      saveDynamicChildren(nodeId, terms);
+      setLiveNodes((prev) => {
+        const n = prev.find((x) => x.id === nodeId);
+        if (!n || n.hasChildren) return prev;
+        n.hasChildren = true;
+        return [...prev];
+      });
+    } catch {
+      /* network hiccup — the node simply stays a leaf */
+    }
+  }, [saveDynamicChildren]);
+
+  // After init, quietly pre-crawl a few root keywords that have no known
+  // children yet (staggered to respect the news source's cooldown).
+  const scheduleRootDiscovery = useCallback((nodes: GraphNode[]) => {
+    const dyn = dynamicChildrenRef.current;
+    nodes
+      .filter((n) => n.depth === 0 && !n.hasChildren && !(dyn[n.id]?.length))
+      .slice(0, 3)
+      .forEach((n, i) => {
+        setTimeout(() => discoverRelated(n.id, n.label), 4000 + i * 5000);
+      });
+  }, [discoverRelated]);
+
+  // Data-driven relations: keywords whose titles co-occur in the live feed.
+  const cooccurPairs = useMemo(() => {
+    const liveIds = new Set(liveNodes.map((n) => n.id));
+    return computeCooccurrencePairs(articles, liveIds);
+  }, [articles, liveNodes]);
 
   // Cross-links are DERIVED from the live node set (not stored): a connection
   // between any two related keywords that aren't already parent↔child.
   const crossLinks = useMemo(
-    () => computeCrossLinks(liveNodes, liveLinks),
-    [liveNodes, liveLinks]
+    () => computeCrossLinks(liveNodes, liveLinks, cooccurPairs),
+    [liveNodes, liveLinks, cooccurPairs]
   );
   const allLinks = useMemo(() => [...liveLinks, ...crossLinks], [liveLinks, crossLinks]);
 
@@ -222,11 +303,18 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
         const restored = restoreGraph(JSON.parse(raw), dims.width, dims.height);
         if (restored) {
           initializedRef.current = true;
+          // Previously crawled keywords stay expandable across reloads.
+          restored.nodes.forEach((n) => {
+            if (!n.hasChildren && (dynamicChildrenRef.current[n.id]?.length ?? 0) > 0) {
+              n.hasChildren = true;
+            }
+          });
           selectionCounter.current = Math.max(0, ...restored.nodes.map((n) => n.selectedAt ?? 0));
           setLiveNodes(restored.nodes);
           setLiveLinks(restored.links);
           syncToStore(restored.nodes);
           reheat();
+          scheduleRootDiscovery(restored.nodes);
           return;
         }
       }
@@ -244,7 +332,8 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     setLiveLinks(links);
     syncToStore(nodes);
     reheat();
-  }, [storeKeywords, activeKeywords, dims, syncToStore, reheat]);
+    scheduleRootDiscovery(nodes);
+  }, [storeKeywords, activeKeywords, dims, syncToStore, reheat, scheduleRootDiscovery]);
 
   // ─── Persist graph structure on every change (post-init) ───────────────
   useEffect(() => {
@@ -309,7 +398,7 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
 
     if (node.hasChildren && !node.expanded && liveNodes.length < MAX_LIVE_NODES) {
       const liveIds = new Set(liveNodes.map((n) => n.id));
-      const children = getChildren(node, liveIds);
+      const children = getChildren(node, liveIds, dynamicChildrenRef.current);
       children.forEach((c) => {
         c.x = (node.x ?? dims.width / 2) + (Math.random() - 0.5) * 30;
         c.y = (node.y ?? dims.height / 2) + (Math.random() - 0.5) * 30;
@@ -380,7 +469,7 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
       depth: 0,
       parentId: null,
       expanded: false,
-      hasChildren: !isLeaf(slug),
+      hasChildren: !isLeaf(slug) || (dynamicChildrenRef.current[slug]?.length ?? 0) > 0,
       selectedAt: ++selectionCounter.current,
       x: dims.width / 2 + (Math.random() - 0.5) * 40,
       y: dims.height / 2 + (Math.random() - 0.5) * 40,
@@ -389,8 +478,11 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     setLiveNodes(newNodes);
     syncToStore(newNodes);
     reheat();
+    // Unknown keyword → pre-crawl its related terms in the background so the
+    // node grows the purple expand affordance once discovery lands.
+    if (!node.hasChildren) discoverRelated(slug, trimmed);
     return { ok: true };
-  }, [liveNodes, dims, reheat, syncToStore]);
+  }, [liveNodes, dims, reheat, syncToStore, discoverRelated]);
 
   // ─── Node drag (screen → world via current view) ────────────────────────
   const handleWindowPointerMove = useCallback((e: PointerEvent) => {

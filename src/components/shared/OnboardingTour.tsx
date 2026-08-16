@@ -102,7 +102,7 @@ const STEPS = [
   },
   {
     title: 'Read the signal',
-    body: 'Every dot is an article. Switch Cluster and Timeline views, group by Sentiment or Topic, and click any dot or card to open the full story.',
+    body: 'Every dot is an article. Switch Cluster and Timeline views, tune the Filters sliders to re-weight what stands out, and click any dot or card to open the full story.',
   },
 ];
 
