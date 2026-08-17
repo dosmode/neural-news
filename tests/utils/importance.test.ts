@@ -54,4 +54,19 @@ describe('computeImportance', () => {
     expect(computeImportance([], nodes).size).toBe(0);
     expect(computeImportance([art('x', '20260814T000000Z')], []).size).toBe(0);
   });
+
+  it('matches short Latin labels as whole words only', () => {
+    const articles = [
+      art('Local business owners plus tourists rally', '20260814T100000Z'), // "us" inside words
+      art('US tariffs hit European exports', '20260814T110000Z'), // real "US"
+      art('He said the plan was fair', '20260814T120000Z'), // "ai" inside "said"
+      art('AI startups raise record funding', '20260814T130000Z'), // real "AI"
+    ];
+    const m = computeImportance(articles, [
+      { id: 'us', label: 'US' },
+      { id: 'ai', label: 'AI' },
+    ]);
+    expect(m.get('us')!.count).toBe(1);
+    expect(m.get('ai')!.count).toBe(1);
+  });
 });

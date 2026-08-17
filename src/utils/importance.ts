@@ -37,10 +37,16 @@ export function computeImportance(
       map.set(n.id, { score: 0, count: 0 });
       continue;
     }
+    // Short Latin labels ("US", "AI", "EV") must match as whole words —
+    // plain substring search would count "business" as a hit for "us".
+    const boundaryRe =
+      needle.length <= 3 && /^[a-z0-9]+$/.test(needle)
+        ? new RegExp(`\\b${needle}\\b`)
+        : null;
     let score = 0;
     let count = 0;
     for (const d of dated) {
-      if (!d.title.includes(needle)) continue;
+      if (boundaryRe ? !boundaryRe.test(d.title) : !d.title.includes(needle)) continue;
       count += 1;
       const recency = d.t === null ? 0.5 : (d.t - min) / span;
       score += 0.4 + recency * 0.6;

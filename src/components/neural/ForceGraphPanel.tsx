@@ -19,6 +19,8 @@ import {
   MAX_LIVE_NODES,
 } from '@/utils/graphTree';
 import { computeImportance } from '@/utils/importance';
+import { appendSnapshot, snapshotLabel, CoverageSnapshot } from '@/utils/snapshots';
+import { KEYWORD_SUGGESTIONS_MAP } from '@/services/keywordSuggestions';
 import { slugify } from '@/utils/keywordUtils';
 import { extractRelatedTerms } from '@/utils/relatedTerms';
 import GraphNodeView from './GraphNodeView';
@@ -29,6 +31,8 @@ const NEWS_ACTIVE_CAP = 8; // cap active keywords sent to the news query
 const GRAPH_STORAGE_KEY = 'neural-news:graph:v1';
 const DYNAMIC_CHILDREN_KEY = 'neural-news:dynamic-children:v1';
 const COVERAGE_KEY = 'neural-news:coverage:v1';
+const HISTORY_KEY = 'neural-news:snapshots:v1';
+const SUGGEST_DISMISSED_KEY = 'neural-news:suggest-dismissed:v1';
 
 function loadDynamicChildren(): Record<string, string[]> {
   try {
@@ -260,10 +264,57 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
         setSurging(new Set());
       }
       window.localStorage.setItem(COVERAGE_KEY, JSON.stringify({ setKey, counts, at: Date.now() }));
+
+      // Time machine history: rolling snapshots (10-min resolution, 7 days)
+      const rawHist = window.localStorage.getItem(HISTORY_KEY);
+      const hist: CoverageSnapshot[] = rawHist ? JSON.parse(rawHist) : [];
+      window.localStorage.setItem(
+        HISTORY_KEY,
+        JSON.stringify(appendSnapshot(hist, { at: Date.now(), setKey, counts }))
+      );
     } catch {
       /* storage unavailable → no surge tracking */
     }
   }, [importanceMap, activeKeywords, articles.length]);
+
+  // ─── Issue time machine ─────────────────────────────────────────────────
+  // Scrub back through coverage snapshots: node sizes/glow reflect the
+  // selected moment instead of the live feed. null = live.
+  const [tmOpen, setTmOpen] = useState(false);
+  const [tmHistory, setTmHistory] = useState<CoverageSnapshot[]>([]);
+  const [travelIdx, setTravelIdx] = useState<number | null>(null);
+
+  const openTimeMachine = useCallback(() => {
+    setTmOpen((open) => {
+      if (open) {
+        setTravelIdx(null); // closing returns to live
+        return false;
+      }
+      try {
+        const raw = window.localStorage.getItem(HISTORY_KEY);
+        setTmHistory(raw ? JSON.parse(raw) : []);
+      } catch {
+        setTmHistory([]);
+      }
+      return true;
+    });
+  }, []);
+
+  const timeTraveling = tmOpen && travelIdx !== null && !!tmHistory[travelIdx];
+
+  // The importance the RENDERER sees: historical while scrubbing, else live.
+  const effectiveImportance = useMemo(() => {
+    if (!timeTraveling) return importanceMap;
+    const snap = tmHistory[travelIdx as number];
+    const m = new Map<string, { score: number; count: number }>();
+    let max = 0;
+    for (const n of liveNodes) max = Math.max(max, snap.counts[n.id] ?? 0);
+    for (const n of liveNodes) {
+      const c = snap.counts[n.id] ?? 0;
+      m.set(n.id, { score: max > 0 ? c / max : 0, count: c });
+    }
+    return m;
+  }, [timeTraveling, tmHistory, travelIdx, liveNodes]);
 
   // Write the importance-scaled visual radius onto the node objects (the
   // collide force and the renderer both read n.r) and bump sizeVersion so the
@@ -272,13 +323,13 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   useEffect(() => {
     let changed = false;
     for (const n of liveNodes) {
-      const imp = importanceMap.get(n.id)?.score ?? 0;
+      const imp = effectiveImportance.get(n.id)?.score ?? 0;
       const next = baseRadius(n.depth) * (0.85 + imp * 0.85); // up to ~1.7×
       if (Math.abs((n.r ?? 0) - next) > 0.75) changed = true;
       n.r = next;
     }
     if (changed) setSizeVersion((v) => v + 1);
-  }, [importanceMap, liveNodes]);
+  }, [effectiveImportance, liveNodes]);
 
   const { tickVersion, reheat, setFixed } = useForceSimulation({
     width: dims.width,
@@ -540,6 +591,101 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     return { ok: true };
   }, [liveNodes, dims, reheat, syncToStore, discoverRelated]);
 
+  // ─── Auto-adopt suggestion ──────────────────────────────────────────────
+  // Related terms we know about (curated map + crawled) that are NOT on the
+  // graph yet but are getting real coverage in the current feed → offer a
+  // one-tap "add" toast. Dismissals persist; the cap is respected.
+  const [suggestion, setSuggestion] = useState<{ id: string; label: string; parentId: string } | null>(null);
+  const sessionSkippedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (articles.length === 0 || liveNodes.length === 0 || liveNodes.length >= MAX_LIVE_NODES) {
+      setSuggestion(null);
+      return;
+    }
+    let dismissed: string[] = [];
+    try {
+      dismissed = JSON.parse(window.localStorage.getItem(SUGGEST_DISMISSED_KEY) || '[]');
+    } catch {
+      /* ignore */
+    }
+    const dismissedSet = new Set(dismissed);
+    const liveIds = new Set(liveNodes.map((n) => n.id));
+    const seen = new Set<string>();
+    const candidates: { id: string; label: string; parentId: string }[] = [];
+    for (const n of liveNodes) {
+      const labels = [
+        ...(KEYWORD_SUGGESTIONS_MAP[n.id] ?? []),
+        ...(dynamicChildrenRef.current[n.id] ?? []),
+      ];
+      for (const label of labels) {
+        const id = slugify(label);
+        if (!id || liveIds.has(id) || seen.has(id) || dismissedSet.has(id) || sessionSkippedRef.current.has(id)) continue;
+        seen.add(id);
+        candidates.push({ id, label, parentId: n.id });
+      }
+      if (candidates.length >= 40) break;
+    }
+    if (candidates.length === 0) {
+      setSuggestion(null);
+      return;
+    }
+    const scores = computeImportance(articles, candidates);
+    let best: (typeof candidates)[number] | null = null;
+    let bestCount = 0;
+    for (const c of candidates) {
+      const cnt = scores.get(c.id)?.count ?? 0;
+      if (cnt > bestCount) {
+        best = c;
+        bestCount = cnt;
+      }
+    }
+    setSuggestion(bestCount >= 3 && best ? best : null);
+  }, [articles, liveNodes]);
+
+  const acceptSuggestion = useCallback(() => {
+    if (!suggestion) return;
+    if (liveNodes.some((n) => n.id === suggestion.id) || liveNodes.length >= MAX_LIVE_NODES) {
+      setSuggestion(null);
+      return;
+    }
+    const parent = liveNodes.find((n) => n.id === suggestion.parentId);
+    const node: GraphNode = {
+      id: suggestion.id,
+      label: suggestion.label,
+      depth: parent ? parent.depth + 1 : 0,
+      parentId: parent ? parent.id : null,
+      expanded: false,
+      hasChildren: !isLeaf(suggestion.id) || (dynamicChildrenRef.current[suggestion.id]?.length ?? 0) > 0,
+      selectedAt: ++selectionCounter.current,
+      x: (parent?.x ?? dims.width / 2) + (Math.random() - 0.5) * 40,
+      y: (parent?.y ?? dims.height / 2) + (Math.random() - 0.5) * 40,
+    };
+    const newNodes = [...liveNodes, node];
+    const newLinks = parent
+      ? [...liveLinks, { id: `${parent.id}-${node.id}`, source: parent.id, target: node.id, type: 'hierarchy' as const }]
+      : liveLinks;
+    sessionSkippedRef.current.add(suggestion.id);
+    setSuggestion(null);
+    setLiveNodes(newNodes);
+    setLiveLinks(newLinks);
+    syncToStore(newNodes);
+    reheat();
+  }, [suggestion, liveNodes, liveLinks, dims, syncToStore, reheat]);
+
+  const dismissSuggestion = useCallback(() => {
+    if (!suggestion) return;
+    try {
+      const arr: string[] = JSON.parse(window.localStorage.getItem(SUGGEST_DISMISSED_KEY) || '[]');
+      if (!arr.includes(suggestion.id)) arr.push(suggestion.id);
+      window.localStorage.setItem(SUGGEST_DISMISSED_KEY, JSON.stringify(arr.slice(-100)));
+    } catch {
+      /* ignore */
+    }
+    sessionSkippedRef.current.add(suggestion.id);
+    setSuggestion(null);
+  }, [suggestion]);
+
   // ─── Node drag (screen → world via current view) ────────────────────────
   const handleWindowPointerMove = useCallback((e: PointerEvent) => {
     const drag = dragRef.current;
@@ -732,8 +878,8 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
                   isHovered={hoveredId === n.id}
                   isNeighborDimmed={dimmed}
                   isSelected={activeNewsIds.has(n.id)}
-                  importance={importanceMap.get(n.id)?.score ?? 0}
-                  isSurging={surging.has(n.id)}
+                  importance={effectiveImportance.get(n.id)?.score ?? 0}
+                  isSurging={!timeTraveling && surging.has(n.id)}
                   onPointerDown={handleNodePointerDown}
                   onPointerEnter={setHoveredId}
                   onPointerLeave={() => setHoveredId(null)}
@@ -747,6 +893,7 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
 
       {/* Control cluster (top-right) */}
       <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5">
+        <CtrlButton label="Time machine" onClick={openTimeMachine}>⏱</CtrlButton>
         <CtrlButton label="Zoom in" onClick={() => zoomToward(1.2)}>＋</CtrlButton>
         <CtrlButton label="Zoom out" onClick={() => zoomToward(1 / 1.2)}>－</CtrlButton>
         <CtrlButton label="Reset view" onClick={resetView}>⊙</CtrlButton>
@@ -754,6 +901,62 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
           {fullscreen ? '⤢' : '⛶'}
         </CtrlButton>
       </div>
+
+      {/* Time machine bar: scrub node sizes back through coverage history */}
+      <AnimatePresence>
+        {tmOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.18 }}
+            className="absolute top-12 left-1/2 -translate-x-1/2 z-40 w-[min(320px,85%)] rounded-xl bg-black/85 border border-white/12 backdrop-blur-xl px-4 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[9px] font-mono text-white/40 uppercase tracking-[0.2em]">
+                Issue Time Machine
+              </span>
+              <button
+                onClick={() => { setTravelIdx(null); setTmOpen(false); }}
+                className={`text-[9px] font-mono uppercase tracking-widest px-2 py-0.5 rounded border transition-colors ${
+                  timeTraveling
+                    ? 'border-neon-blue/60 text-neon-blue hover:bg-neon-blue/10'
+                    : 'border-white/15 text-white/40 hover:text-white'
+                }`}
+              >
+                {timeTraveling ? '● Live' : 'Close'}
+              </button>
+            </div>
+            {tmHistory.length >= 2 ? (
+              <>
+                <input
+                  type="range"
+                  min={0}
+                  max={tmHistory.length - 1}
+                  value={travelIdx ?? tmHistory.length - 1}
+                  onChange={(e) => {
+                    const idx = Number(e.target.value);
+                    setTravelIdx(idx >= tmHistory.length - 1 ? null : idx);
+                  }}
+                  aria-label="Time machine scrubber"
+                  className="w-full h-5 cursor-pointer accent-[#ffb85c]"
+                />
+                <div className="flex justify-between text-[8px] font-mono text-white/30 mt-0.5">
+                  <span>{snapshotLabel(tmHistory[0].at)}</span>
+                  <span className={timeTraveling ? 'text-[#ffb85c] font-bold' : 'text-neon-green'}>
+                    {timeTraveling ? snapshotLabel(tmHistory[travelIdx as number].at) : 'NOW · LIVE'}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="text-[9px] font-mono text-white/30 leading-relaxed">
+                Not enough history yet — snapshots build every ~10 min as you browse.
+              </p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Legend (bottom-right) */}
       {liveNodes.length > 0 && (
@@ -797,6 +1000,41 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
           Scroll · zoom   ·   Drag bg · pan   ·   Click · expand
         </div>
       )}
+
+      {/* Auto-adopt suggestion: a related keyword is trending but not on the graph */}
+      <AnimatePresence>
+        {suggestion && !timeTraveling && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.2 }}
+            className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-black/85 border border-neon-green/30 rounded-full pl-3 pr-1.5 py-1.5 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] whitespace-nowrap"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <span className="hidden sm:inline text-[9px] font-mono text-white/45 uppercase tracking-wider">
+              Trending in your feed
+            </span>
+            <span className="text-[10px] font-mono text-neon-green font-bold uppercase tracking-wider">
+              {suggestion.label}
+            </span>
+            <button
+              onClick={acceptSuggestion}
+              aria-label={`Add ${suggestion.label}`}
+              className="px-2.5 py-1 rounded-full bg-neon-green/15 border border-neon-green/50 text-neon-green text-[9px] font-bold uppercase tracking-widest hover:bg-neon-green/30 transition-colors"
+            >
+              + Add
+            </button>
+            <button
+              onClick={dismissSuggestion}
+              aria-label="Dismiss suggestion"
+              className="w-6 h-6 rounded-full text-white/30 hover:text-white text-[11px] leading-none"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Node-cap toast: expansion was silently impossible before; now say why */}
       <AnimatePresence>
