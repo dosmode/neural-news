@@ -1,14 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import { calculateClustering, Cluster } from '@/utils/clustering';
+import { filterArticlesAsOf } from '@/utils/timeline';
 import { MappedPoint } from '@/types';
 
 export function useClustering(width: number, height: number) {
-  const articles = useStore((state) => state.articles);
+  const allArticles = useStore((state) => state.articles);
   const activeKeywords = useStore((state) => state.activeKeywords);
   const filterWeights = useStore((state) => state.filterWeights);
   const clusterMode = useStore((state) => state.clusterMode);
   const keywords = useStore((state) => state.keywords);
+  const timeMachineAt = useStore((state) => state.timeMachineAt);
+
+  // Time machine: only articles from the selected moment's window exist.
+  const articles = useMemo(
+    () => filterArticlesAsOf(allArticles, timeMachineAt),
+    [allArticles, timeMachineAt]
+  );
 
   const [points, setPoints] = useState<MappedPoint[]>([]);
   const [clusters, setClusters] = useState<Cluster[]>([]);

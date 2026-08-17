@@ -70,3 +70,37 @@ describe('computeImportance', () => {
     expect(m.get('ai')!.count).toBe(1);
   });
 });
+
+describe('computeImportance as-of mode (time machine)', () => {
+  const nodes = [{ id: 'ai', label: 'AI' }];
+  const at = Date.UTC(2026, 7, 14, 12, 0, 0); // 2026-08-14T12:00Z
+
+  it('only counts articles inside the [at - window, at] range', () => {
+    const articles = [
+      { title: 'AI story before the window', seendate: '20260812T110000Z' },
+      { title: 'AI story inside the window', seendate: '20260814T080000Z' },
+      { title: 'AI story after at (future)', seendate: '20260814T130000Z' },
+    ];
+    const m = computeImportance(articles, nodes, { at, windowMs: 24 * 3600_000 });
+    expect(m.get('ai')!.count).toBe(1);
+  });
+
+  it('excludes undated articles while traveling', () => {
+    const articles = [{ title: 'AI undated', seendate: '' }];
+    const m = computeImportance(articles, nodes, { at });
+    expect(m.get('ai')?.count ?? 0).toBe(0);
+  });
+
+  it('weights recency relative to the selected moment', () => {
+    const articles = [
+      { title: 'AI early in window', seendate: '20260813T130000Z' },
+      { title: 'Bitcoin right before at', seendate: '20260814T115900Z' },
+    ];
+    const m = computeImportance(
+      articles,
+      [{ id: 'ai', label: 'AI' }, { id: 'bitcoin', label: 'Bitcoin' }],
+      { at }
+    );
+    expect(m.get('bitcoin')!.score).toBeGreaterThan(m.get('ai')!.score);
+  });
+});

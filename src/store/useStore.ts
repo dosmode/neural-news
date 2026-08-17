@@ -20,6 +20,7 @@ export const useStore = create<AppState>((set) => ({
   hydrated: false,
   clusterMode: 'sentiment',
   viewMode: 'cluster',
+  timeMachineAt: null,
 
   // The force graph owns the keyword lifecycle and syncs the full set here.
   setKeywords: (keywords, activeIds) =>
@@ -48,4 +49,6 @@ export const useStore = create<AppState>((set) => ({
   setClusterMode: (clusterMode) => set({ clusterMode }),
 
   setViewMode: (viewMode) => set({ viewMode }),
+
+  setTimeMachineAt: (timeMachineAt) => set({ timeMachineAt }),
 }));

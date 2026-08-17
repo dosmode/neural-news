@@ -20,6 +20,34 @@ export function parseSeendate(s: string): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
+/** Look-back window the issue time machine shows for a selected moment. */
+export const TIME_MACHINE_WINDOW_MS = 24 * HOUR_MS;
+
+/**
+ * Restrict articles to the time machine's view: published in
+ * [at - window, at]. `at === null` means live — everything passes.
+ * Undated articles are excluded while traveling (they can't be placed).
+ */
+export function filterArticlesAsOf<T extends { seendate: string }>(
+  articles: T[],
+  at: number | null,
+  windowMs: number = TIME_MACHINE_WINDOW_MS
+): T[] {
+  if (at === null) return articles;
+  return articles.filter((a) => {
+    const t = parseSeendate(a.seendate);
+    return t !== null && t <= at && t >= at - windowMs;
+  });
+}
+
+/** Short local timestamp for scrubber labels (e.g. "8/14 21:05"). */
+export function formatShortTime(ms: number): string {
+  const d = new Date(ms);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`;
+}
+
 /**
  * Lay out articles on a horizontal time axis by publication time. Dots at the
  * same time-column stack vertically (alternating up/down) so busy periods read

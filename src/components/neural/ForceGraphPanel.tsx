@@ -19,7 +19,7 @@ import {
   MAX_LIVE_NODES,
 } from '@/utils/graphTree';
 import { computeImportance } from '@/utils/importance';
-import { appendSnapshot, snapshotLabel, CoverageSnapshot } from '@/utils/snapshots';
+import { parseSeendate, formatShortTime, TIME_MACHINE_WINDOW_MS } from '@/utils/timeline';
 import { KEYWORD_SUGGESTIONS_MAP } from '@/services/keywordSuggestions';
 import { slugify } from '@/utils/keywordUtils';
 import { extractRelatedTerms } from '@/utils/relatedTerms';
@@ -31,7 +31,6 @@ const NEWS_ACTIVE_CAP = 8; // cap active keywords sent to the news query
 const GRAPH_STORAGE_KEY = 'neural-news:graph:v1';
 const DYNAMIC_CHILDREN_KEY = 'neural-news:dynamic-children:v1';
 const COVERAGE_KEY = 'neural-news:coverage:v1';
-const HISTORY_KEY = 'neural-news:snapshots:v1';
 const SUGGEST_DISMISSED_KEY = 'neural-news:suggest-dismissed:v1';
 
 function loadDynamicChildren(): Record<string, string[]> {
@@ -264,57 +263,58 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
         setSurging(new Set());
       }
       window.localStorage.setItem(COVERAGE_KEY, JSON.stringify({ setKey, counts, at: Date.now() }));
-
-      // Time machine history: rolling snapshots (10-min resolution, 7 days)
-      const rawHist = window.localStorage.getItem(HISTORY_KEY);
-      const hist: CoverageSnapshot[] = rawHist ? JSON.parse(rawHist) : [];
-      window.localStorage.setItem(
-        HISTORY_KEY,
-        JSON.stringify(appendSnapshot(hist, { at: Date.now(), setKey, counts }))
-      );
     } catch {
       /* storage unavailable → no surge tracking */
     }
   }, [importanceMap, activeKeywords, articles.length]);
 
   // ─── Issue time machine ─────────────────────────────────────────────────
-  // Scrub back through coverage snapshots: node sizes/glow reflect the
-  // selected moment instead of the live feed. null = live.
+  // Driven by the articles' own dates — no browsing history required. The
+  // scrubber spans the feed's date range; picking a moment shows coverage
+  // from that moment's 24h window, and (via the store) rewinds the map/feed.
   const [tmOpen, setTmOpen] = useState(false);
-  const [tmHistory, setTmHistory] = useState<CoverageSnapshot[]>([]);
-  const [travelIdx, setTravelIdx] = useState<number | null>(null);
+  const [tmAt, setTmAt] = useState<number | null>(null);
+  const setTimeMachineAt = useStore((s) => s.setTimeMachineAt);
+
+  const timeRange = useMemo(() => {
+    const times: number[] = [];
+    for (const a of articles) {
+      const t = parseSeendate(a.seendate);
+      if (t !== null) times.push(t);
+    }
+    if (times.length < 5) return null;
+    times.sort((a, b) => a - b);
+    const max = times[times.length - 1];
+    // Robust lower bound: a single months-old outlier must not stretch the
+    // scrubber into an empty wasteland — start at the 10th percentile,
+    // capped to the last 7 days.
+    const p10 = times[Math.floor(times.length * 0.1)];
+    const min = Math.max(p10, max - 7 * 24 * 3600_000);
+    return max - min >= 2 * 3600_000 ? { min, max } : null;
+  }, [articles]);
+
+  const applyTravel = useCallback(
+    (at: number | null) => {
+      setTmAt(at);
+      setTimeMachineAt(at);
+    },
+    [setTimeMachineAt]
+  );
 
   const openTimeMachine = useCallback(() => {
     setTmOpen((open) => {
-      if (open) {
-        setTravelIdx(null); // closing returns to live
-        return false;
-      }
-      try {
-        const raw = window.localStorage.getItem(HISTORY_KEY);
-        setTmHistory(raw ? JSON.parse(raw) : []);
-      } catch {
-        setTmHistory([]);
-      }
-      return true;
+      if (open) applyTravel(null); // closing returns to live
+      return !open;
     });
-  }, []);
+  }, [applyTravel]);
 
-  const timeTraveling = tmOpen && travelIdx !== null && !!tmHistory[travelIdx];
+  const timeTraveling = tmOpen && tmAt !== null;
 
-  // The importance the RENDERER sees: historical while scrubbing, else live.
+  // The importance the RENDERER sees: as-of the scrubbed moment, else live.
   const effectiveImportance = useMemo(() => {
-    if (!timeTraveling) return importanceMap;
-    const snap = tmHistory[travelIdx as number];
-    const m = new Map<string, { score: number; count: number }>();
-    let max = 0;
-    for (const n of liveNodes) max = Math.max(max, snap.counts[n.id] ?? 0);
-    for (const n of liveNodes) {
-      const c = snap.counts[n.id] ?? 0;
-      m.set(n.id, { score: max > 0 ? c / max : 0, count: c });
-    }
-    return m;
-  }, [timeTraveling, tmHistory, travelIdx, liveNodes]);
+    if (!timeTraveling || tmAt === null) return importanceMap;
+    return computeImportance(articles, liveNodes, { at: tmAt, windowMs: TIME_MACHINE_WINDOW_MS });
+  }, [timeTraveling, tmAt, articles, liveNodes, importanceMap]);
 
   // Write the importance-scaled visual radius onto the node objects (the
   // collide force and the renderer both read n.r) and bump sizeVersion so the
@@ -918,7 +918,7 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
                 Issue Time Machine
               </span>
               <button
-                onClick={() => { setTravelIdx(null); setTmOpen(false); }}
+                onClick={() => { applyTravel(null); setTmOpen(false); }}
                 className={`text-[9px] font-mono uppercase tracking-widest px-2 py-0.5 rounded border transition-colors ${
                   timeTraveling
                     ? 'border-neon-blue/60 text-neon-blue hover:bg-neon-blue/10'
@@ -928,30 +928,32 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
                 {timeTraveling ? '● Live' : 'Close'}
               </button>
             </div>
-            {tmHistory.length >= 2 ? (
+            {timeRange ? (
               <>
                 <input
                   type="range"
-                  min={0}
-                  max={tmHistory.length - 1}
-                  value={travelIdx ?? tmHistory.length - 1}
+                  min={timeRange.min}
+                  max={timeRange.max}
+                  step={Math.max(60_000, Math.round((timeRange.max - timeRange.min) / 96))}
+                  value={tmAt ?? timeRange.max}
                   onChange={(e) => {
-                    const idx = Number(e.target.value);
-                    setTravelIdx(idx >= tmHistory.length - 1 ? null : idx);
+                    const v = Number(e.target.value);
+                    const step = Math.max(60_000, Math.round((timeRange.max - timeRange.min) / 96));
+                    applyTravel(v >= timeRange.max - step ? null : v);
                   }}
                   aria-label="Time machine scrubber"
                   className="w-full h-5 cursor-pointer accent-[#ffb85c]"
                 />
                 <div className="flex justify-between text-[8px] font-mono text-white/30 mt-0.5">
-                  <span>{snapshotLabel(tmHistory[0].at)}</span>
+                  <span>{formatShortTime(timeRange.min)}</span>
                   <span className={timeTraveling ? 'text-[#ffb85c] font-bold' : 'text-neon-green'}>
-                    {timeTraveling ? snapshotLabel(tmHistory[travelIdx as number].at) : 'NOW · LIVE'}
+                    {timeTraveling ? formatShortTime(tmAt as number) : 'NOW · LIVE'}
                   </span>
                 </div>
               </>
             ) : (
               <p className="text-[9px] font-mono text-white/30 leading-relaxed">
-                Not enough history yet — snapshots build every ~10 min as you browse.
+                Not enough dated articles yet — the scrubber needs a feed spanning a few hours.
               </p>
             )}
           </motion.div>

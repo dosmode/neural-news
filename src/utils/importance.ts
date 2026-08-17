@@ -15,20 +15,44 @@ export interface ImportanceEntry {
  * anchor. Drives node radius/glow so the day's dominant issues read at a
  * glance.
  */
+export interface ImportanceOpts {
+  /** Time-machine mode: measure coverage as of this Unix-ms moment. */
+  at?: number;
+  /** Look-back window for `at` mode (default 24h). */
+  windowMs?: number;
+}
+
 export function computeImportance(
   articles: { title: string; seendate: string }[],
-  nodes: { id: string; label: string }[]
+  nodes: { id: string; label: string }[],
+  opts?: ImportanceOpts
 ): Map<string, ImportanceEntry> {
   const map = new Map<string, ImportanceEntry>();
   if (articles.length === 0 || nodes.length === 0) return map;
 
-  const dated = articles.map((a) => ({
+  const at = opts?.at ?? null;
+  const windowMs = opts?.windowMs ?? 24 * 3600_000;
+
+  let dated = articles.map((a) => ({
     title: a.title.toLowerCase(),
     t: parseSeendate(a.seendate),
   }));
-  const times = dated.map((d) => d.t).filter((t): t is number => t !== null);
-  const min = times.length ? Math.min(...times) : 0;
-  const span = (times.length ? Math.max(...times) : 1) - min || 1;
+
+  let min: number;
+  let span: number;
+  if (at !== null) {
+    // As-of mode: only articles published in [at - window, at] exist "yet";
+    // undated articles can't be placed on the timeline and are excluded.
+    const start = at - windowMs;
+    dated = dated.filter((d) => d.t !== null && d.t <= at && d.t >= start);
+    if (dated.length === 0) return map;
+    min = start;
+    span = windowMs;
+  } else {
+    const times = dated.map((d) => d.t).filter((t): t is number => t !== null);
+    min = times.length ? Math.min(...times) : 0;
+    span = (times.length ? Math.max(...times) : 1) - min || 1;
+  }
 
   let maxScore = 0;
   for (const n of nodes) {
