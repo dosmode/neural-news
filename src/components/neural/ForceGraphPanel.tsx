@@ -28,6 +28,7 @@ const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 const NEWS_ACTIVE_CAP = 8; // cap active keywords sent to the news query
 const GRAPH_STORAGE_KEY = 'neural-news:graph:v1';
 const DYNAMIC_CHILDREN_KEY = 'neural-news:dynamic-children:v1';
+const COVERAGE_KEY = 'neural-news:coverage:v1';
 
 function loadDynamicChildren(): Record<string, string[]> {
   try {
@@ -232,6 +233,37 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     () => computeImportance(articles, liveNodes),
     [articles, liveNodes]
   );
+
+  // SURGE detection: compare each keyword's coverage against the last
+  // snapshot taken with the SAME active keyword set (so query changes don't
+  // fake a spike). A keyword that at least doubled with real volume gets a
+  // pulsing badge — "this just blew up".
+  const [surging, setSurging] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (articles.length === 0 || importanceMap.size === 0) return;
+    const setKey = Array.from(activeKeywords).sort().join(',');
+    const counts: Record<string, number> = {};
+    importanceMap.forEach((e, id) => {
+      counts[id] = e.count;
+    });
+    try {
+      const prevRaw = window.localStorage.getItem(COVERAGE_KEY);
+      const prev = prevRaw ? JSON.parse(prevRaw) : null;
+      if (prev && prev.setKey === setKey && prev.counts) {
+        const s = new Set<string>();
+        for (const [id, c] of Object.entries(counts)) {
+          const p: number = prev.counts[id] ?? 0;
+          if (c >= 3 && c >= p * 2 && c - p >= 2) s.add(id);
+        }
+        setSurging(s);
+      } else {
+        setSurging(new Set());
+      }
+      window.localStorage.setItem(COVERAGE_KEY, JSON.stringify({ setKey, counts, at: Date.now() }));
+    } catch {
+      /* storage unavailable → no surge tracking */
+    }
+  }, [importanceMap, activeKeywords, articles.length]);
 
   // Write the importance-scaled visual radius onto the node objects (the
   // collide force and the renderer both read n.r) and bump sizeVersion so the
@@ -701,6 +733,7 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
                   isNeighborDimmed={dimmed}
                   isSelected={activeNewsIds.has(n.id)}
                   importance={importanceMap.get(n.id)?.score ?? 0}
+                  isSurging={surging.has(n.id)}
                   onPointerDown={handleNodePointerDown}
                   onPointerEnter={setHoveredId}
                   onPointerLeave={() => setHoveredId(null)}
@@ -740,6 +773,12 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
             </svg>
             <span className="text-[8px] font-mono text-white/40 uppercase tracking-wider">Size · Coverage</span>
           </div>
+          {surging.size > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] leading-none" style={{ color: '#ff9f1c' }}>▲</span>
+              <span className="text-[8px] font-mono uppercase tracking-wider" style={{ color: 'rgba(255,159,28,0.75)' }}>Surging now</span>
+            </div>
+          )}
         </div>
       )}
 

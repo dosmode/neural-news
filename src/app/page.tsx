@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 
 import ForceGraphPanel from '@/components/neural/ForceGraphPanel';
@@ -13,6 +13,10 @@ import { useGdeltFetch } from '@/hooks/useGdeltFetch';
 import { useKeywordInit } from '@/hooks/useKeywordInit';
 
 const TOUR_DONE_KEY = 'neural-news:tour-done';
+const PANEL_W_KEY = 'neural-news:panel-w';
+const PANEL_W_DEFAULT = 360;
+const PANEL_W_MIN = 280;
+const PANEL_W_MAX = 800;
 
 function StatusIndicator() {
   const isLoading = useStore((s) => s.isLoading);
@@ -39,6 +43,52 @@ export default function Home() {
   // Mobile shows one surface at a time via the bottom tab bar; desktop shows
   // all three side by side (the tab state is simply ignored at lg and up).
   const [mobileTab, setMobileTab] = useState<MobileTab>('graph');
+
+  // Desktop: the graph panel is resizable — drag the divider, double-click to
+  // reset. Width persists across visits.
+  const [panelW, setPanelW] = useState(PANEL_W_DEFAULT);
+  const panelWRef = useRef(panelW);
+  panelWRef.current = panelW;
+  useEffect(() => {
+    try {
+      const v = Number(window.localStorage.getItem(PANEL_W_KEY));
+      if (v >= PANEL_W_MIN && v <= PANEL_W_MAX) setPanelW(v);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    const move = (ev: PointerEvent) => {
+      const max = Math.min(PANEL_W_MAX, window.innerWidth * 0.6);
+      setPanelW(Math.min(Math.max(ev.clientX, PANEL_W_MIN), max));
+    };
+    const up = () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      try {
+        window.localStorage.setItem(PANEL_W_KEY, String(Math.round(panelWRef.current)));
+      } catch {
+        /* ignore */
+      }
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }, []);
+
+  const resetPanelW = useCallback(() => {
+    setPanelW(PANEL_W_DEFAULT);
+    try {
+      window.localStorage.setItem(PANEL_W_KEY, String(PANEL_W_DEFAULT));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // First-visit onboarding: auto-open once, re-openable from the header "?".
   const [tourOpen, setTourOpen] = useState(false);
@@ -105,10 +155,22 @@ export default function Home() {
           BELOW the z-30 header, making the exit/zoom controls unclickable. */}
       <div
         className="flex flex-col lg:flex-row flex-1 min-h-0 lg:overflow-hidden pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0"
+        style={{ ['--panel-w' as string]: `${panelW}px` }}
       >
         <ForceGraphPanel
-          className={`${mobileTab === 'graph' ? 'block' : 'hidden'} lg:block w-full flex-1 min-h-0 border-white/[0.05] lg:flex-none lg:w-[360px] lg:h-auto lg:border-r`}
+          className={`${mobileTab === 'graph' ? 'block' : 'hidden'} lg:block w-full flex-1 min-h-0 border-white/[0.05] lg:flex-none lg:w-[var(--panel-w)] lg:h-auto`}
         />
+
+        {/* Resizable divider (desktop): drag to widen the graph, dbl-click to reset */}
+        <div
+          onPointerDown={onDividerPointerDown}
+          onDoubleClick={resetPanelW}
+          title="Drag to resize · double-click to reset"
+          className="hidden lg:block relative w-1 shrink-0 cursor-col-resize bg-white/[0.05] hover:bg-neon-blue/40 active:bg-neon-blue/60 transition-colors touch-none"
+        >
+          {/* Invisible widened hit strip — a 4px line is too thin to grab */}
+          <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
+        </div>
 
         <div
           className={`${mobileTab === 'graph' ? 'hidden' : 'flex'} lg:flex flex-col w-full flex-1 min-h-0 lg:min-w-0`}

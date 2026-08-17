@@ -11,6 +11,8 @@ interface GraphNodeViewProps {
   isSelected: boolean;
   /** 0..1 share of current news coverage — drives radius and glow. */
   importance?: number;
+  /** Coverage spiked vs the last snapshot — pulsing "this just blew up" ring. */
+  isSurging?: boolean;
   onPointerDown: (id: string, e: React.PointerEvent) => void;
   onPointerEnter: (id: string) => void;
   onPointerLeave: () => void;
@@ -28,6 +30,7 @@ export default function GraphNodeView({
   isNeighborDimmed,
   isSelected,
   importance = 0,
+  isSurging = false,
   onPointerDown,
   onPointerEnter,
   onPointerLeave,
@@ -81,6 +84,29 @@ export default function GraphNodeView({
       {/* Selected ring: this keyword is currently driving the article results */}
       {isSelected && (
         <circle r={r + 4.5} fill="none" stroke="#39ff14" strokeWidth={1.5} opacity={0.85} />
+      )}
+
+      {/* Surge: coverage just spiked — expanding pulse ring + ▲ badge */}
+      {isSurging && (
+        <>
+          <circle r={r + 8} fill="none" stroke="#ff9f1c" strokeWidth={1.4}>
+            <animate attributeName="r" values={`${r + 6};${r + 16};${r + 6}`} dur="1.8s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.8;0;0.8" dur="1.8s" repeatCount="indefinite" />
+          </circle>
+          <text
+            x={-r - 5}
+            y={-r - 5}
+            textAnchor="middle"
+            fontSize={10}
+            fontWeight={700}
+            fill="#ff9f1c"
+            stroke="#06060b"
+            strokeWidth={2}
+            style={{ pointerEvents: 'none', paintOrder: 'stroke' }}
+          >
+            ▲
+          </text>
+        </>
       )}
 
       <circle
