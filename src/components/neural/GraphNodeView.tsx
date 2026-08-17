@@ -2,22 +2,19 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { GraphNode } from '@/utils/graphTree';
+import { GraphNode, baseRadius } from '@/utils/graphTree';
 
 interface GraphNodeViewProps {
   node: GraphNode;
   isHovered: boolean;
   isNeighborDimmed: boolean;
   isSelected: boolean;
+  /** 0..1 share of current news coverage — drives radius and glow. */
+  importance?: number;
   onPointerDown: (id: string, e: React.PointerEvent) => void;
   onPointerEnter: (id: string) => void;
   onPointerLeave: () => void;
   onRemove?: (id: string) => void;
-}
-
-// Node radius shrinks with depth: root largest, leaves smallest.
-function radiusFor(depth: number): number {
-  return Math.max(6, 14 - depth * 2.5);
 }
 
 // On touch devices hover never sticks, so hover-only affordances are
@@ -30,6 +27,7 @@ export default function GraphNodeView({
   isHovered,
   isNeighborDimmed,
   isSelected,
+  importance = 0,
   onPointerDown,
   onPointerEnter,
   onPointerLeave,
@@ -37,9 +35,11 @@ export default function GraphNodeView({
 }: GraphNodeViewProps) {
   if (node.x == null || node.y == null) return null;
 
-  const r = radiusFor(node.depth);
+  // Importance-scaled radius (panel writes node.r; fall back to the base).
+  const r = node.r ?? baseRadius(node.depth);
   const isRoot = node.depth === 0;
   const collapsedWithChildren = node.hasChildren && !node.expanded;
+  const hot = importance > 0.35;
 
   // root = neon blue, collapsed-with-children = neon purple, leaf/expanded = dim
   const fill = isRoot
@@ -64,9 +64,13 @@ export default function GraphNodeView({
       onPointerEnter={() => onPointerEnter(node.id)}
       onPointerLeave={onPointerLeave}
     >
-      {/* Glow halo for active/hovered nodes */}
-      {(isRoot || isHovered || node.expanded) && (
-        <circle r={r + 6} fill={fill} opacity={isHovered ? 0.28 : 0.16} />
+      {/* Glow halo — hot topics glow harder so the day's issues pop */}
+      {(isRoot || isHovered || node.expanded || hot) && (
+        <circle
+          r={r + 6 + importance * 4}
+          fill={fill}
+          opacity={isHovered ? 0.28 : 0.14 + importance * 0.22}
+        />
       )}
 
       {/* Expand affordance ring for collapsed-with-children */}
@@ -91,8 +95,8 @@ export default function GraphNodeView({
         x={0}
         y={r + 12}
         textAnchor="middle"
-        fontSize={isRoot ? 11 : 9}
-        fontWeight={isRoot ? 700 : 500}
+        fontSize={(isRoot ? 11 : 9) + Math.round(importance * 2)}
+        fontWeight={isRoot || importance > 0.6 ? 700 : 500}
         fill={labelFill}
         stroke="#06060b"
         strokeWidth={2.5}

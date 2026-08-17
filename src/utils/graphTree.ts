@@ -12,6 +12,9 @@ export interface GraphNode {
   hasChildren: boolean;
   // Monotonic recency counter; higher = more recently clicked. Drives news priority.
   selectedAt?: number;
+  // Visual radius (importance-scaled); also feeds the collide force. Set by
+  // the panel from computeImportance; absent → baseRadius(depth).
+  r?: number;
   // Mutated in place by the d3-force simulation:
   x?: number;
   y?: number;
@@ -29,6 +32,14 @@ export interface GraphLink {
   // 'hierarchy' = parent→child from expansion; 'cross' = related-keyword association.
   // Absent is treated as hierarchy.
   type?: 'hierarchy' | 'cross';
+  // Cross links only: co-occurrence article count — higher = stronger tie,
+  // rendered thicker/brighter. Absent = curated/token relation (baseline).
+  weight?: number;
+}
+
+/** Base node radius before importance scaling: root largest, leaves smallest. */
+export function baseRadius(depth: number): number {
+  return Math.max(6, 14 - depth * 2.5);
 }
 
 export const MAX_LIVE_NODES = 60;
@@ -150,13 +161,13 @@ export function pairKey(a: string, b: string): string {
  * article's title matches BOTH (relevanceMap high band, ≥ 0.8) in at least
  * `minCount` articles. This links keywords the curated map and token overlap
  * can't see — e.g. "Samsung" ↔ "South Korea" via shared Korean coverage.
- * Returns a Set of pairKey() strings.
+ * Returns pairKey() → co-occurrence count (the tie's strength).
  */
 export function computeCooccurrencePairs(
   articles: { relevanceMap: Record<string, number> }[],
   liveIds: Set<string>,
   minCount = 2
-): Set<string> {
+): Map<string, number> {
   const counts = new Map<string, number>();
   for (const a of articles) {
     const matched = Object.entries(a.relevanceMap)
@@ -169,9 +180,9 @@ export function computeCooccurrencePairs(
       }
     }
   }
-  const out = new Set<string>();
+  const out = new Map<string, number>();
   counts.forEach((c, k) => {
-    if (c >= minCount) out.add(k);
+    if (c >= minCount) out.set(k, c);
   });
   return out;
 }
@@ -186,7 +197,7 @@ export function computeCooccurrencePairs(
 export function computeCrossLinks(
   nodes: GraphNode[],
   hierarchyLinks: GraphLink[],
-  extraPairs?: Set<string>
+  extraPairs?: Map<string, number>
 ): GraphLink[] {
   const existing = new Set(
     hierarchyLinks.map((l) => pairKey(linkSourceId(l), linkTargetId(l)))
@@ -199,8 +210,9 @@ export function computeCrossLinks(
       const b = ids[j];
       const key = pairKey(a, b);
       if (existing.has(key)) continue; // already a hierarchy link (FR-005)
-      if (!areRelated(a, b) && !extraPairs?.has(key)) continue;
-      out.push({ id: `x-${key}`, source: a, target: b, type: 'cross' });
+      const cooccur = extraPairs?.get(key);
+      if (!areRelated(a, b) && cooccur === undefined) continue;
+      out.push({ id: `x-${key}`, source: a, target: b, type: 'cross', weight: cooccur });
       if (out.length >= MAX_CROSS_LINKS) return out; // density cap (FR-010)
     }
   }

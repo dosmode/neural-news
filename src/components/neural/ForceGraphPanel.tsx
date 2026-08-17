@@ -15,8 +15,10 @@ import {
   buildOverview,
   restoreGraph,
   isLeaf,
+  baseRadius,
   MAX_LIVE_NODES,
 } from '@/utils/graphTree';
+import { computeImportance } from '@/utils/importance';
 import { slugify } from '@/utils/keywordUtils';
 import { extractRelatedTerms } from '@/utils/relatedTerms';
 import GraphNodeView from './GraphNodeView';
@@ -225,11 +227,33 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   );
   const allLinks = useMemo(() => [...liveLinks, ...crossLinks], [liveLinks, crossLinks]);
 
+  // How hot is each keyword in the current feed → node radius/glow scale.
+  const importanceMap = useMemo(
+    () => computeImportance(articles, liveNodes),
+    [articles, liveNodes]
+  );
+
+  // Write the importance-scaled visual radius onto the node objects (the
+  // collide force and the renderer both read n.r) and bump sizeVersion so the
+  // simulation re-reads collide radii and gently resettles.
+  const [sizeVersion, setSizeVersion] = useState(0);
+  useEffect(() => {
+    let changed = false;
+    for (const n of liveNodes) {
+      const imp = importanceMap.get(n.id)?.score ?? 0;
+      const next = baseRadius(n.depth) * (0.85 + imp * 0.85); // up to ~1.7×
+      if (Math.abs((n.r ?? 0) - next) > 0.75) changed = true;
+      n.r = next;
+    }
+    if (changed) setSizeVersion((v) => v + 1);
+  }, [importanceMap, liveNodes]);
+
   const { tickVersion, reheat, setFixed } = useForceSimulation({
     width: dims.width,
     height: dims.height,
     nodes: liveNodes,
     links: allLinks,
+    sizeVersion,
   });
 
   const initializedRef = useRef(false);
@@ -676,6 +700,7 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
                   isHovered={hoveredId === n.id}
                   isNeighborDimmed={dimmed}
                   isSelected={activeNewsIds.has(n.id)}
+                  importance={importanceMap.get(n.id)?.score ?? 0}
                   onPointerDown={handleNodePointerDown}
                   onPointerEnter={setHoveredId}
                   onPointerLeave={() => setHoveredId(null)}
@@ -707,6 +732,13 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
           <div className="flex items-center gap-1.5">
             <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="#bc13fe" strokeWidth="1.4" strokeOpacity="0.7" strokeDasharray="3 3" /></svg>
             <span className="text-[8px] font-mono text-white/40 uppercase tracking-wider">Related</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <svg width="18" height="10">
+              <circle cx="4" cy="5" r="2" fill="#8a8a9a" opacity="0.7" />
+              <circle cx="13" cy="5" r="4.5" fill="#00f3ff" opacity="0.8" />
+            </svg>
+            <span className="text-[8px] font-mono text-white/40 uppercase tracking-wider">Size · Coverage</span>
           </div>
         </div>
       )}

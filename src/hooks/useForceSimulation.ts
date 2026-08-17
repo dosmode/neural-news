@@ -17,6 +17,8 @@ interface UseForceSimulationParams {
   height: number;
   nodes: GraphNode[];
   links: GraphLink[];
+  /** Bump when node radii (n.r) change so the collide force re-reads them. */
+  sizeVersion?: number;
 }
 
 interface UseForceSimulationResult {
@@ -27,7 +29,10 @@ interface UseForceSimulationResult {
 
 const LINK_DISTANCE = 64;
 const CHARGE_STRENGTH = -200;
-const COLLIDE_RADIUS = 32;
+// Collide radius = the node's visual radius + label/breathing room. The
+// default root radius is 14, so 14 + 18 matches the old fixed 32.
+const COLLIDE_PAD = 18;
+const collideRadius = (d: GraphNode) => (d.r ?? 14) + COLLIDE_PAD;
 const COLLIDE_STRENGTH = 0.85;
 const CENTER_PULL = 0.04; // gentle forceX/forceY pull toward center
 const VELOCITY_DECAY = 0.45; // higher friction → glides to rest, less oscillation
@@ -42,6 +47,7 @@ export function useForceSimulation({
   height,
   nodes,
   links,
+  sizeVersion = 0,
 }: UseForceSimulationParams): UseForceSimulationResult {
   const simRef = useRef<Simulation<GraphNode, GraphLink> | null>(null);
   const [tickVersion, setTickVersion] = useState(0);
@@ -57,7 +63,7 @@ export function useForceSimulation({
           .distance(LINK_DISTANCE)
       )
       .force('charge', forceManyBody().strength(CHARGE_STRENGTH))
-      .force('collide', forceCollide(COLLIDE_RADIUS).strength(COLLIDE_STRENGTH))
+      .force('collide', forceCollide<GraphNode>(collideRadius).strength(COLLIDE_STRENGTH))
       .on('tick', () => setTickVersion((v) => (v + 1) % 1_000_000));
 
     simRef.current = sim;
@@ -81,6 +87,8 @@ export function useForceSimulation({
   }, [width, height]);
 
   // Feed the current live nodes/links into the simulation whenever they change.
+  // Also re-runs on sizeVersion bumps: d3 caches each node's collide radius at
+  // initialization, so importance-driven radius changes need a re-init.
   useEffect(() => {
     const sim = simRef.current;
     if (!sim) return;
@@ -88,7 +96,7 @@ export function useForceSimulation({
     const linkForce = sim.force('link') as ForceLink<GraphNode, GraphLink> | undefined;
     if (linkForce) linkForce.links(links);
     sim.alpha(0.3).restart();
-  }, [nodes, links]);
+  }, [nodes, links, sizeVersion]);
 
   const reheat = useCallback(() => {
     simRef.current?.alpha(0.3).restart();

@@ -23,18 +23,22 @@ export default function GraphLinkView({ link, isHighlighted, isDimmed }: GraphLi
   if (!s || !t) return null;
 
   const isCross = link.type === 'cross';
+  // Co-occurrence count (data-driven ties). Curated/token relations have no
+  // weight and render at the baseline.
+  const w = link.weight ?? 0;
 
   // Cross links (keyword↔keyword association) read as dashed, muted purple, and
-  // dimmer than the solid hierarchy (parent→child) links.
+  // dimmer than the solid hierarchy (parent→child) links. Strong ties (many
+  // shared articles) render thicker and brighter so hot connections pop.
   const opacity = isDimmed
     ? 0.05
     : isHighlighted
     ? 0.7
     : isCross
-    ? 0.15
+    ? Math.min(0.5, 0.15 + w * 0.07)
     : 0.22;
   const stroke = isHighlighted ? '#00f3ff' : isCross ? '#bc13fe' : '#ffffff';
-  const width = isHighlighted ? 1.6 : isCross ? 0.7 : 1;
+  const width = isHighlighted ? 1.6 : isCross ? Math.min(2, 0.7 + w * 0.3) : 1;
 
   return (
     // motion.g so links fade in/out with their nodes under AnimatePresence
