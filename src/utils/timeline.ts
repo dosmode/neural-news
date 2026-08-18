@@ -40,6 +40,28 @@ export function filterArticlesAsOf<T extends { seendate: string }>(
   });
 }
 
+/**
+ * Scrubbable date range of a set of articles: 10th-percentile floor (a lone
+ * months-old outlier must not stretch the rail into emptiness), capped to the
+ * last 30 days, and requiring ≥5 dated articles spanning ≥2h.
+ */
+export function computeTimeRange(
+  articles: { seendate: string }[],
+  maxSpanMs: number = 30 * DAY_MS
+): { min: number; max: number } | null {
+  const times: number[] = [];
+  for (const a of articles) {
+    const t = parseSeendate(a.seendate);
+    if (t !== null) times.push(t);
+  }
+  if (times.length < 5) return null;
+  times.sort((a, b) => a - b);
+  const max = times[times.length - 1];
+  const p10 = times[Math.floor(times.length * 0.1)];
+  const min = Math.max(p10, max - maxSpanMs);
+  return max - min >= 2 * HOUR_MS ? { min, max } : null;
+}
+
 /** Short local timestamp for scrubber labels (e.g. "8/14 21:05"). */
 export function formatShortTime(ms: number): string {
   const d = new Date(ms);

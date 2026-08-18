@@ -10,113 +10,80 @@ interface OnboardingTourProps {
   onClose: () => void;
 }
 
-// Mini neon illustrations, one per step, drawn in the app's own visual language.
-function StepArt({ step }: { step: number }) {
-  if (step === 0) {
-    // A tiny keyword graph
-    return (
-      <svg viewBox="0 0 200 90" className="w-full h-[90px]">
-        <line x1="60" y1="45" x2="112" y2="24" stroke="#ffffff" strokeOpacity="0.25" />
-        <line x1="60" y1="45" x2="108" y2="66" stroke="#ffffff" strokeOpacity="0.25" />
-        <line x1="112" y1="24" x2="158" y2="50" stroke="#bc13fe" strokeOpacity="0.5" strokeDasharray="3 4" />
-        <circle cx="60" cy="45" r="11" fill="#00f3ff" opacity="0.9">
-          <animate attributeName="opacity" values="0.9;0.6;0.9" dur="2.4s" repeatCount="indefinite" />
-        </circle>
-        <circle cx="60" cy="45" r="16" fill="none" stroke="#00f3ff" strokeOpacity="0.3" />
-        <circle cx="112" cy="24" r="7" fill="#bc13fe" opacity="0.85" />
-        <circle cx="108" cy="66" r="7" fill="#8a8a9a" />
-        <circle cx="158" cy="50" r="6" fill="#8a8a9a" />
-      </svg>
-    );
-  }
-  if (step === 1) {
-    // Add-topic input + expanding node
-    return (
-      <svg viewBox="0 0 200 90" className="w-full h-[90px]">
-        <rect x="18" y="60" rx="11" width="98" height="22" fill="rgba(0,0,0,0.6)" stroke="rgba(255,255,255,0.2)" />
-        <text x="30" y="75" fontSize="10" fill="rgba(255,255,255,0.4)" fontFamily="monospace">Add topic…</text>
-        <circle cx="105" cy="71" r="8" fill="rgba(0,243,255,0.15)" stroke="#00f3ff" strokeOpacity="0.6" />
-        <text x="105" y="75" fontSize="11" fill="#00f3ff" textAnchor="middle">+</text>
-        <circle cx="150" cy="32" r="9" fill="#bc13fe" opacity="0.9" />
-        <circle cx="150" cy="32" r="13" fill="none" stroke="#bc13fe" strokeOpacity="0.7" strokeDasharray="2 2">
-          <animateTransform attributeName="transform" type="rotate" from="0 150 32" to="360 150 32" dur="9s" repeatCount="indefinite" />
-        </circle>
-        <line x1="150" y1="32" x2="176" y2="52" stroke="#ffffff" strokeOpacity="0.2" />
-        <circle cx="176" cy="52" r="5" fill="#8a8a9a">
-          <animate attributeName="opacity" values="0;1;1" dur="2.6s" repeatCount="indefinite" />
-        </circle>
-      </svg>
-    );
-  }
-  if (step === 2) {
-    // Pan/zoom + green active ring
-    return (
-      <svg viewBox="0 0 200 90" className="w-full h-[90px]">
-        <circle cx="66" cy="44" r="10" fill="#00f3ff" opacity="0.9" />
-        <circle cx="66" cy="44" r="16" fill="none" stroke="#39ff14" strokeWidth="1.5" strokeOpacity="0.85">
-          <animate attributeName="stroke-opacity" values="0.85;0.4;0.85" dur="2s" repeatCount="indefinite" />
-        </circle>
-        <circle cx="126" cy="30" r="6" fill="#8a8a9a" />
-        <circle cx="140" cy="62" r="6" fill="#8a8a9a" />
-        <line x1="66" y1="44" x2="126" y2="30" stroke="#ffffff" strokeOpacity="0.22" />
-        <line x1="66" y1="44" x2="140" y2="62" stroke="#ffffff" strokeOpacity="0.22" />
-        <g stroke="rgba(255,255,255,0.35)" strokeWidth="1.4" fill="none" strokeLinecap="round">
-          <path d="M172 22 v14 M165 29 h14" />
-          <path d="M165 62 h14" />
-        </g>
-      </svg>
-    );
-  }
-  // Article dots + detail card
-  return (
-    <svg viewBox="0 0 200 90" className="w-full h-[90px]">
-      {[
-        [30, 30, '#00f3ff'], [44, 52, '#ff3131'], [58, 24, '#8a8a9a'],
-        [70, 44, '#00f3ff'], [88, 60, '#8a8a9a'], [96, 30, '#ff3131'],
-      ].map(([x, y, c], i) => (
-        <circle key={i} cx={x as number} cy={y as number} r="4" fill={c as string} opacity="0.85">
-          <animate attributeName="cy" values={`${y};${(y as number) - 3};${y}`} dur={`${2 + i * 0.3}s`} repeatCount="indefinite" />
-        </circle>
-      ))}
-      <rect x="122" y="16" rx="6" width="62" height="58" fill="rgba(8,8,16,0.95)" stroke="rgba(255,255,255,0.18)" />
-      <rect x="130" y="26" rx="2" width="34" height="5" fill="rgba(255,255,255,0.5)" />
-      <rect x="130" y="37" rx="2" width="46" height="3" fill="rgba(255,255,255,0.2)" />
-      <rect x="130" y="44" rx="2" width="42" height="3" fill="rgba(255,255,255,0.2)" />
-      <rect x="130" y="56" rx="3" width="46" height="9" fill="#00f3ff" opacity="0.85" />
-    </svg>
-  );
+const CLOSE_ANIM_MS = 240;
+const CARD_W = 300;
+const CARD_H_EST = 200;
+const PAD = 12;
+
+interface Step {
+  title: string;
+  body: string;
+  /** CSS selectors tried in order — first visible match gets the spotlight.
+      Later entries are mobile fallbacks (e.g. the bottom tab button). */
+  targets: string[];
 }
 
-const STEPS = [
+const STEPS: Step[] = [
   {
-    title: 'Welcome to Neural News',
-    body: 'News, mapped as a living graph. Keywords grow, connect, and pull matching stories into your feed in real time.',
+    title: 'Your keyword graph',
+    body: 'News mapped as a living graph. Bigger, brighter nodes = more coverage right now; green rings drive your feed; ▲ marks a topic that just surged.',
+    targets: ['[data-tour="graph"]'],
   },
   {
-    title: 'Grow your graph',
-    body: 'Add your own topics with the input in the graph panel. Purple dashed nodes hold related keywords — click to expand them, click again to collapse.',
+    title: 'Grow it yourself',
+    body: 'Type any topic here — Korean works too. Purple dashed nodes hide related keywords: click to expand, click again to collapse.',
+    targets: ['[data-tour="add-topic"]'],
   },
   {
-    title: 'Explore the map',
-    body: 'Drag the background to pan and scroll to zoom. Green rings mark the keywords currently driving your news feed.',
+    title: 'Graph controls',
+    body: 'Scroll to zoom and drag to pan. ⊙ recenters the view, ⛶ goes fullscreen, and ✦ keeps a history of every keyword the app suggested — re-add any of them.',
+    targets: ['[data-tour="controls"]'],
   },
   {
-    title: 'Read the signal',
-    body: 'Every dot is an article. Switch Cluster and Timeline views, tune the Filters sliders to re-weight what stands out, and click any dot or card to open the full story.',
+    title: 'Read the map',
+    body: 'Every dot is an article, sized by the filter weights. Switch Cluster/Timeline, group by Sentiment/Topic, and open Filters to re-weight the map live.',
+    targets: ['[data-tour="map-controls"]', 'button[aria-label="Map tab"]'],
+  },
+  {
+    title: 'The time machine',
+    body: 'Drag this timeline to rewind the whole app — graph, map, and feed — to any moment. The range grows as the app banks articles; the right end is LIVE.',
+    targets: ['[data-tour="time-rail"]', 'button[aria-label="Map tab"]'],
+  },
+  {
+    title: 'The feed',
+    body: 'All matching articles, newest first. Click any card — or any dot on the map — to open the full story.',
+    targets: ['[data-tour="feed"]', 'button[aria-label="Feed tab"]'],
   },
 ];
 
-const CLOSE_ANIM_MS = 240;
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function findRect(targets: string[]): Rect | null {
+  for (const sel of targets) {
+    const el = document.querySelector(sel);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 4 && r.height > 4 && r.bottom > 0 && r.right > 0) {
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    }
+  }
+  return null;
+}
 
 export default function OnboardingTour({ open, onClose }: OnboardingTourProps) {
   const [step, setStep] = useState(0);
   const [closing, setClosing] = useState(false);
+  const [rect, setRect] = useState<Rect | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const last = step === STEPS.length - 1;
 
-  // Animate out, then unmount deterministically. We intentionally avoid
-  // AnimatePresence here: its exit-complete callback proved unreliable in this
-  // stack, leaving an invisible full-screen overlay that swallowed every click.
+  // Animate out, then unmount deterministically (AnimatePresence exit proved
+  // unreliable in this stack — it left an invisible click-blocking overlay).
   const requestClose = useCallback(() => {
     setClosing(true);
     if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -140,10 +107,44 @@ export default function OnboardingTour({ open, onClose }: OnboardingTourProps) {
     }
   }, [open]);
 
+  // Track the current step's target element. Beyond step changes and resizes,
+  // keep re-measuring on a slow interval while open: layout/FLIP animations
+  // can still be settling when the tour appears, and a rect captured
+  // mid-animation would strand the ring in the wrong place.
+  useEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const next = findRect(STEPS[step].targets);
+      setRect((prev) => {
+        if (
+          prev === next ||
+          (prev &&
+            next &&
+            Math.abs(prev.x - next.x) < 1 &&
+            Math.abs(prev.y - next.y) < 1 &&
+            Math.abs(prev.w - next.w) < 1 &&
+            Math.abs(prev.h - next.h) < 1)
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    };
+    measure();
+    const iv = setInterval(measure, 500);
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [open, step]);
+
   const next = useCallback(() => {
     setStep((s) => {
       if (s >= STEPS.length - 1) {
-        // Defer: calling setState on the parent from inside an updater is a
+        // Defer: setState on the parent from inside an updater is a
         // render-phase side effect React forbids.
         queueMicrotask(requestClose);
         return s;
@@ -164,95 +165,123 @@ export default function OnboardingTour({ open, onClose }: OnboardingTourProps) {
 
   if (!open) return null;
 
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+  const cardW = Math.min(CARD_W, vw - 2 * PAD);
+
+  // Card placement: below the target when there's room, else above; centered
+  // on the target horizontally, clamped to the viewport.
+  let cardLeft = (vw - cardW) / 2;
+  let cardTop = (vh - CARD_H_EST) / 2;
+  if (rect) {
+    cardLeft = Math.min(Math.max(rect.x + rect.w / 2 - cardW / 2, PAD), vw - cardW - PAD);
+    const below = rect.y + rect.h + PAD;
+    cardTop =
+      below + CARD_H_EST <= vh - PAD
+        ? below
+        : Math.max(PAD, rect.y - PAD - CARD_H_EST);
+  }
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: closing ? 0 : 1 }}
-      transition={{ duration: closing ? CLOSE_ANIM_MS / 1000 : 0.25 }}
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4"
-      style={{
-        background: 'rgba(3,3,8,0.78)',
-        backdropFilter: 'blur(6px)',
-        pointerEvents: closing ? 'none' : 'auto',
-      }}
-    >
+    <div className="fixed inset-0 z-[70]" style={{ pointerEvents: 'none' }}>
+      {/* Input blocker: the app underneath stays inert while the tour runs */}
+      <div
+        style={{ pointerEvents: closing ? 'none' : 'auto' }}
+        className="absolute inset-0"
+        onPointerDown={(e) => e.preventDefault()}
+      />
+
+      {/* Spotlight: a ring around the real element; the giant box-shadow dims
+          everything else, punching a visual hole at the target */}
+      {rect ? (
+        <motion.div
+          initial={false}
+          animate={{
+            left: rect.x - 6,
+            top: rect.y - 6,
+            width: rect.w + 12,
+            height: rect.h + 12,
+            opacity: closing ? 0 : 1,
+          }}
+          transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+          className="absolute rounded-xl border border-neon-blue/70 pointer-events-none"
+          style={{ boxShadow: '0 0 0 9999px rgba(3,3,8,0.78), 0 0 24px rgba(0,243,255,0.25)' }}
+        />
+      ) : (
+        <motion.div
+          initial={false}
+          animate={{ opacity: closing ? 0 : 1 }}
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: 'rgba(3,3,8,0.78)' }}
+        />
+      )}
+
+      {/* Step card, gliding next to the highlighted element */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: closing ? 0 : 1, y: closing ? 6 : 0, left: cardLeft, top: cardTop }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        className="absolute rounded-2xl border border-white/12 bg-[#0a0a14]/95 shadow-[0_0_60px_rgba(0,243,255,0.08)] overflow-hidden"
+        style={{ width: cardW, pointerEvents: closing ? 'none' : 'auto' }}
+      >
+        <button
+          onClick={requestClose}
+          aria-label="Skip tour"
+          className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1 px-2.5 py-2 text-[10px] font-mono uppercase tracking-wider text-white/35 hover:text-white transition-colors"
+        >
+          Skip <X size={13} />
+        </button>
+
+        <div className="p-5 pt-6">
           <motion.div
-            initial={{ opacity: 0, y: 18, scale: 0.97 }}
-            animate={closing ? { opacity: 0, y: 12, scale: 0.98 } : { opacity: 1, y: 0, scale: 1 }}
-            transition={closing ? { duration: CLOSE_ANIM_MS / 1000 } : { type: 'spring', stiffness: 320, damping: 28 }}
-            className="relative w-full max-w-[380px] rounded-2xl border border-white/12 bg-[#0a0a14]/95 shadow-[0_0_60px_rgba(0,243,255,0.08)] overflow-hidden"
+            key={step}
+            initial={{ opacity: 0, x: 18 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
           >
-            {/* Ambient glows */}
-            <div className="absolute -top-20 -left-20 w-44 h-44 bg-neon-blue/10 blur-[80px] pointer-events-none" />
-            <div className="absolute -bottom-24 -right-16 w-44 h-44 bg-neon-purple/10 blur-[80px] pointer-events-none" />
-
-            {/* Skip — always one tap away */}
-            <button
-              onClick={requestClose}
-              aria-label="Skip tour"
-              className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2.5 py-2 text-[10px] font-mono uppercase tracking-wider text-white/35 hover:text-white transition-colors"
-            >
-              Skip <X size={13} />
-            </button>
-
-            <div className="relative p-6 pt-8">
-              {/* Step content re-enters on key change. Deliberately NOT a nested
-                  AnimatePresence: a presence inside an exiting presence blocks
-                  the parent's exit from completing, leaving an invisible
-                  full-screen overlay that eats all clicks. */}
-              <motion.div
-                key={step}
-                initial={{ opacity: 0, x: 24 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.22, ease: 'easeOut' }}
-              >
-                  <div className="rounded-xl bg-black/40 border border-white/[0.06] mb-5">
-                    <StepArt step={step} />
-                  </div>
-                  <div className="text-[9px] font-mono text-neon-blue/70 uppercase tracking-[0.25em] mb-2">
-                    Step {step + 1} / {STEPS.length}
-                  </div>
-                  <h2 className="text-lg font-bold text-white tracking-tight mb-2">
-                    {STEPS[step].title}
-                  </h2>
-                  <p className="text-[13px] leading-relaxed text-white/55 min-h-[60px]">
-                    {STEPS[step].body}
-                  </p>
-              </motion.div>
-
-              {/* Controls */}
-              <div className="flex items-center justify-between mt-5">
-                <div className="flex items-center gap-1.5">
-                  {STEPS.map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setStep(i)}
-                      aria-label={`Go to step ${i + 1}`}
-                      className={`h-1.5 rounded-full transition-all duration-300 ${
-                        i === step ? 'w-5 bg-neon-blue' : 'w-1.5 bg-white/20 hover:bg-white/40'
-                      }`}
-                    />
-                  ))}
-                </div>
-                <div className="flex items-center gap-2">
-                  {step > 0 && (
-                    <button
-                      onClick={() => setStep((s) => s - 1)}
-                      className="px-3 py-2 text-[11px] font-mono uppercase tracking-wider text-white/40 hover:text-white transition-colors"
-                    >
-                      Back
-                    </button>
-                  )}
-                  <button
-                    onClick={next}
-                    className="px-4 py-2 rounded-lg bg-neon-blue text-black text-[11px] font-bold uppercase tracking-widest hover:bg-white transition-colors"
-                  >
-                    {last ? 'Start exploring' : 'Next'}
-                  </button>
-                </div>
-              </div>
+            <div className="text-[9px] font-mono text-neon-blue/70 uppercase tracking-[0.25em] mb-1.5">
+              Step {step + 1} / {STEPS.length}
             </div>
+            <h2 className="text-base font-bold text-white tracking-tight mb-1.5">
+              {STEPS[step].title}
+            </h2>
+            <p className="text-[12.5px] leading-relaxed text-white/55 min-h-[54px]">
+              {STEPS[step].body}
+            </p>
           </motion.div>
-    </motion.div>
+
+          <div className="flex items-center justify-between mt-4">
+            <div className="flex items-center gap-1.5">
+              {STEPS.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setStep(i)}
+                  aria-label={`Go to step ${i + 1}`}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    i === step ? 'w-5 bg-neon-blue' : 'w-1.5 bg-white/20 hover:bg-white/40'
+                  }`}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              {step > 0 && (
+                <button
+                  onClick={() => setStep((s) => s - 1)}
+                  className="px-2.5 py-2 text-[11px] font-mono uppercase tracking-wider text-white/40 hover:text-white transition-colors"
+                >
+                  Back
+                </button>
+              )}
+              <button
+                onClick={next}
+                className="px-4 py-2 rounded-lg bg-neon-blue text-black text-[11px] font-bold uppercase tracking-widest hover:bg-white transition-colors"
+              >
+                {last ? 'Start exploring' : 'Next'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
   );
 }

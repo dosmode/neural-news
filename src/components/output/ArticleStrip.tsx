@@ -4,6 +4,7 @@ import React, { useRef, useMemo, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { Article } from '@/types';
 import { filterArticlesAsOf } from '@/utils/timeline';
+import { timeTravelPool } from '@/utils/archive';
 
 function ArticleCard({
   article,
@@ -67,12 +68,13 @@ export default function ArticleStrip({
   const isLoading = useStore((s) => s.isLoading);
 
   const timeMachineAt = useStore((s) => s.timeMachineAt);
+  const keywords = useStore((s) => s.keywords);
   const sorted = useMemo(
     () =>
-      [...filterArticlesAsOf(articles, timeMachineAt)].sort((a, b) =>
-        (b.seendate || '').localeCompare(a.seendate || '')
+      [...filterArticlesAsOf(timeTravelPool(articles, timeMachineAt, keywords), timeMachineAt)].sort(
+        (a, b) => (b.seendate || '').localeCompare(a.seendate || '')
       ),
-    [articles, timeMachineAt]
+    [articles, timeMachineAt, keywords]
   );
 
   // Horizontal wheel-scroll needs a native non-passive listener: React's
@@ -98,7 +100,7 @@ export default function ArticleStrip({
   }, [selectedArticleId]);
 
   return (
-    <div style={style} className={`flex flex-col bg-black/40 border-t border-white/[0.05] ${className}`}>
+    <div style={style} data-tour="feed" className={`flex flex-col bg-black/40 border-t border-white/[0.05] ${className}`}>
       <div className="px-4 py-1.5 text-[9px] font-mono text-white/25 uppercase tracking-widest shrink-0 border-b border-white/[0.04]">
         {timeMachineAt !== null ? 'Time Machine' : 'Live Feed'} · {sorted.length} Articles
       </div>

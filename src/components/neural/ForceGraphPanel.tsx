@@ -19,7 +19,8 @@ import {
   MAX_LIVE_NODES,
 } from '@/utils/graphTree';
 import { computeImportance } from '@/utils/importance';
-import { parseSeendate, formatShortTime, TIME_MACHINE_WINDOW_MS } from '@/utils/timeline';
+import { formatShortTime, TIME_MACHINE_WINDOW_MS } from '@/utils/timeline';
+import { timeTravelPool } from '@/utils/archive';
 import { KEYWORD_SUGGESTIONS_MAP } from '@/services/keywordSuggestions';
 import { slugify } from '@/utils/keywordUtils';
 import { extractRelatedTerms } from '@/utils/relatedTerms';
@@ -32,6 +33,15 @@ const GRAPH_STORAGE_KEY = 'neural-news:graph:v1';
 const DYNAMIC_CHILDREN_KEY = 'neural-news:dynamic-children:v1';
 const COVERAGE_KEY = 'neural-news:coverage:v1';
 const SUGGEST_DISMISSED_KEY = 'neural-news:suggest-dismissed:v1';
+const SUGGEST_HISTORY_KEY = 'neural-news:suggest-history:v1';
+
+interface SuggestHistoryEntry {
+  id: string;
+  label: string;
+  parentId: string | null;
+  at: number;
+  status: 'seen' | 'added' | 'dismissed';
+}
 
 function loadDynamicChildren(): Record<string, string[]> {
   try {
@@ -77,6 +87,7 @@ function AddRootControl({ onAdd }: { onAdd: (label: string) => { ok: boolean; er
 
   return (
     <div
+      data-tour="add-topic"
       className="absolute bottom-3 left-3 z-30 flex flex-col gap-1"
       style={{ width: 180 }}
       onPointerDown={(e) => e.stopPropagation()}
@@ -269,52 +280,21 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   }, [importanceMap, activeKeywords, articles.length]);
 
   // ─── Issue time machine ─────────────────────────────────────────────────
-  // Driven by the articles' own dates — no browsing history required. The
-  // scrubber spans the feed's date range; picking a moment shows coverage
-  // from that moment's 24h window, and (via the store) rewinds the map/feed.
-  const [tmOpen, setTmOpen] = useState(false);
-  const [tmAt, setTmAt] = useState<number | null>(null);
-  const setTimeMachineAt = useStore((s) => s.setTimeMachineAt);
+  // The bottom rail in the map (TimeMachineRail) owns scrubbing; the panel
+  // just follows the store's selected moment.
+  const timeMachineAt = useStore((s) => s.timeMachineAt);
+  const timeTraveling = timeMachineAt !== null;
 
-  const timeRange = useMemo(() => {
-    const times: number[] = [];
-    for (const a of articles) {
-      const t = parseSeendate(a.seendate);
-      if (t !== null) times.push(t);
-    }
-    if (times.length < 5) return null;
-    times.sort((a, b) => a - b);
-    const max = times[times.length - 1];
-    // Robust lower bound: a single months-old outlier must not stretch the
-    // scrubber into an empty wasteland — start at the 10th percentile,
-    // capped to the last 7 days.
-    const p10 = times[Math.floor(times.length * 0.1)];
-    const min = Math.max(p10, max - 7 * 24 * 3600_000);
-    return max - min >= 2 * 3600_000 ? { min, max } : null;
-  }, [articles]);
-
-  const applyTravel = useCallback(
-    (at: number | null) => {
-      setTmAt(at);
-      setTimeMachineAt(at);
-    },
-    [setTimeMachineAt]
-  );
-
-  const openTimeMachine = useCallback(() => {
-    setTmOpen((open) => {
-      if (open) applyTravel(null); // closing returns to live
-      return !open;
-    });
-  }, [applyTravel]);
-
-  const timeTraveling = tmOpen && tmAt !== null;
-
-  // The importance the RENDERER sees: as-of the scrubbed moment, else live.
+  // The importance the RENDERER sees: as-of the scrubbed moment (drawing on
+  // the local archive for older coverage), else live.
   const effectiveImportance = useMemo(() => {
-    if (!timeTraveling || tmAt === null) return importanceMap;
-    return computeImportance(articles, liveNodes, { at: tmAt, windowMs: TIME_MACHINE_WINDOW_MS });
-  }, [timeTraveling, tmAt, articles, liveNodes, importanceMap]);
+    if (timeMachineAt === null) return importanceMap;
+    return computeImportance(
+      timeTravelPool(articles, timeMachineAt, storeKeywords),
+      liveNodes,
+      { at: timeMachineAt, windowMs: TIME_MACHINE_WINDOW_MS }
+    );
+  }, [timeMachineAt, articles, storeKeywords, liveNodes, importanceMap]);
 
   // Write the importance-scaled visual radius onto the node objects (the
   // collide force and the renderer both read n.r) and bump sizeVersion so the
@@ -367,24 +347,41 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     return () => ro.disconnect();
   }, []);
 
-  // Re-measure right after a fullscreen toggle. Keep the user's zoom level but
-  // aim the view at the NEW canvas center: the simulation's center force pulls
-  // the node cloud there, so any offset based on old positions double-shifts.
+  // Re-measure right after a fullscreen toggle.
+  // Rescale node world positions to the new canvas proportionally: relying on
+  // the simulation to migrate the cloud leaves nodes stranded off-panel when
+  // alpha decays first (then even Reset view shows empty space, because reset
+  // only fixes the VIEW — the node coordinates themselves are out of range).
   // offsetWidth/Height ignore the FLIP transform mid-animation (rects don't).
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const prev = dimsRef.current;
     const w = el.offsetWidth;
     const h = el.offsetHeight;
     if (w === 0) return;
     dimsRef.current = { width: w, height: h };
     setDims(dimsRef.current);
+    if (prev.width > 0 && prev.height > 0 && (prev.width !== w || prev.height !== h)) {
+      const sx = w / prev.width;
+      const sy = h / prev.height;
+      for (const n of liveNodesRef.current) {
+        if (n.x != null) n.x *= sx;
+        if (n.y != null) n.y *= sy;
+        n.vx = 0;
+        n.vy = 0;
+        if (n.fx != null) n.fx *= sx;
+        if (n.fy != null) n.fy *= sy;
+      }
+      reheat(); // let collide/links polish the rescaled layout
+    }
+    // Keep the zoom level; aim the view at the new canvas center.
     setView((v) => ({
       k: v.k,
       x: (w / 2) * (1 - v.k),
       y: (h / 2) * (1 - v.k),
     }));
-  }, [fullscreen]);
+  }, [fullscreen, reheat]);
 
   // ─── Sync active keyword set → store (recency priority) ─────────────────
   const syncToStore = useCallback((nodes: GraphNode[]) => {
@@ -643,20 +640,61 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     setSuggestion(bestCount >= 3 && best ? best : null);
   }, [articles, liveNodes]);
 
-  const acceptSuggestion = useCallback(() => {
-    if (!suggestion) return;
-    if (liveNodes.some((n) => n.id === suggestion.id) || liveNodes.length >= MAX_LIVE_NODES) {
-      setSuggestion(null);
+  // ─── Suggestion history (every suggestion ever shown, re-addable) ──────
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [suggestHistory, setSuggestHistory] = useState<SuggestHistoryEntry[]>([]);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SUGGEST_HISTORY_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) setSuggestHistory(parsed);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const logSuggest = useCallback((entry: { id: string; label: string; parentId: string | null }, status: SuggestHistoryEntry['status']) => {
+    setSuggestHistory((prev) => {
+      const existing = prev.find((h) => h.id === entry.id);
+      // 'added' is sticky; otherwise the newest event wins.
+      const nextStatus = existing?.status === 'added' && status === 'seen' ? 'added' : status;
+      const next: SuggestHistoryEntry[] = [
+        { id: entry.id, label: entry.label, parentId: entry.parentId, at: Date.now(), status: nextStatus },
+        ...prev.filter((h) => h.id !== entry.id),
+      ].slice(0, 50);
+      try {
+        window.localStorage.setItem(SUGGEST_HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  // Log each newly surfaced suggestion once.
+  const lastLoggedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (suggestion && suggestion.id !== lastLoggedRef.current) {
+      lastLoggedRef.current = suggestion.id;
+      logSuggest(suggestion, 'seen');
+    }
+  }, [suggestion, logSuggest]);
+
+  // Insert a suggested keyword into the graph (from the toast OR the history
+  // popover), linked under the parent node that originally surfaced it.
+  const adoptSuggestion = useCallback((entry: { id: string; label: string; parentId: string | null }) => {
+    if (liveNodes.some((n) => n.id === entry.id) || liveNodes.length >= MAX_LIVE_NODES) {
+      setSuggestion((s) => (s?.id === entry.id ? null : s));
       return;
     }
-    const parent = liveNodes.find((n) => n.id === suggestion.parentId);
+    const parent = entry.parentId ? liveNodes.find((n) => n.id === entry.parentId) : undefined;
     const node: GraphNode = {
-      id: suggestion.id,
-      label: suggestion.label,
+      id: entry.id,
+      label: entry.label,
       depth: parent ? parent.depth + 1 : 0,
       parentId: parent ? parent.id : null,
       expanded: false,
-      hasChildren: !isLeaf(suggestion.id) || (dynamicChildrenRef.current[suggestion.id]?.length ?? 0) > 0,
+      hasChildren: !isLeaf(entry.id) || (dynamicChildrenRef.current[entry.id]?.length ?? 0) > 0,
       selectedAt: ++selectionCounter.current,
       x: (parent?.x ?? dims.width / 2) + (Math.random() - 0.5) * 40,
       y: (parent?.y ?? dims.height / 2) + (Math.random() - 0.5) * 40,
@@ -665,13 +703,25 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     const newLinks = parent
       ? [...liveLinks, { id: `${parent.id}-${node.id}`, source: parent.id, target: node.id, type: 'hierarchy' as const }]
       : liveLinks;
-    sessionSkippedRef.current.add(suggestion.id);
-    setSuggestion(null);
+    sessionSkippedRef.current.add(entry.id);
+    // Re-adding a previously dismissed keyword un-dismisses it.
+    try {
+      const arr: string[] = JSON.parse(window.localStorage.getItem(SUGGEST_DISMISSED_KEY) || '[]');
+      window.localStorage.setItem(SUGGEST_DISMISSED_KEY, JSON.stringify(arr.filter((d) => d !== entry.id)));
+    } catch {
+      /* ignore */
+    }
+    logSuggest(entry, 'added');
+    setSuggestion((s) => (s?.id === entry.id ? null : s));
     setLiveNodes(newNodes);
     setLiveLinks(newLinks);
     syncToStore(newNodes);
     reheat();
-  }, [suggestion, liveNodes, liveLinks, dims, syncToStore, reheat]);
+  }, [liveNodes, liveLinks, dims, syncToStore, reheat, logSuggest]);
+
+  const acceptSuggestion = useCallback(() => {
+    if (suggestion) adoptSuggestion(suggestion);
+  }, [suggestion, adoptSuggestion]);
 
   const dismissSuggestion = useCallback(() => {
     if (!suggestion) return;
@@ -683,8 +733,9 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
       /* ignore */
     }
     sessionSkippedRef.current.add(suggestion.id);
+    logSuggest(suggestion, 'dismissed');
     setSuggestion(null);
-  }, [suggestion]);
+  }, [suggestion, logSuggest]);
 
   // ─── Node drag (screen → world via current view) ────────────────────────
   const handleWindowPointerMove = useCallback((e: PointerEvent) => {
@@ -819,6 +870,7 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   return (
     <motion.div
       ref={containerRef}
+      data-tour="graph"
       layout
       transition={{ layout: { duration: 0.28, ease: [0.4, 0, 0.2, 1] } }}
       style={fullscreen ? undefined : style}
@@ -892,8 +944,8 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
       </svg>
 
       {/* Control cluster (top-right) */}
-      <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5">
-        <CtrlButton label="Time machine" onClick={openTimeMachine}>⏱</CtrlButton>
+      <div data-tour="controls" className="absolute top-3 right-3 z-30 flex items-center gap-1.5">
+        <CtrlButton label="Suggestion history" onClick={() => setHistoryOpen((o) => !o)}>✦</CtrlButton>
         <CtrlButton label="Zoom in" onClick={() => zoomToward(1.2)}>＋</CtrlButton>
         <CtrlButton label="Zoom out" onClick={() => zoomToward(1 / 1.2)}>－</CtrlButton>
         <CtrlButton label="Reset view" onClick={resetView}>⊙</CtrlButton>
@@ -902,59 +954,68 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
         </CtrlButton>
       </div>
 
-      {/* Time machine bar: scrub node sizes back through coverage history */}
+      {/* Suggested-keyword history: every suggestion ever shown, re-addable */}
       <AnimatePresence>
-        {tmOpen && (
+        {historyOpen && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
-            className="absolute top-12 left-1/2 -translate-x-1/2 z-40 w-[min(320px,85%)] rounded-xl bg-black/85 border border-white/12 backdrop-blur-xl px-4 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
+            className="absolute top-12 right-3 z-40 w-[240px] max-h-[280px] overflow-y-auto rounded-xl bg-black/85 border border-white/12 backdrop-blur-xl p-3 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-2">
               <span className="text-[9px] font-mono text-white/40 uppercase tracking-[0.2em]">
-                Issue Time Machine
+                Suggested Keywords
               </span>
               <button
-                onClick={() => { applyTravel(null); setTmOpen(false); }}
-                className={`text-[9px] font-mono uppercase tracking-widest px-2 py-0.5 rounded border transition-colors ${
-                  timeTraveling
-                    ? 'border-neon-blue/60 text-neon-blue hover:bg-neon-blue/10'
-                    : 'border-white/15 text-white/40 hover:text-white'
-                }`}
+                onClick={() => setHistoryOpen(false)}
+                className="text-[9px] font-mono text-white/40 hover:text-white uppercase tracking-widest"
               >
-                {timeTraveling ? '● Live' : 'Close'}
+                Close
               </button>
             </div>
-            {timeRange ? (
-              <>
-                <input
-                  type="range"
-                  min={timeRange.min}
-                  max={timeRange.max}
-                  step={Math.max(60_000, Math.round((timeRange.max - timeRange.min) / 96))}
-                  value={tmAt ?? timeRange.max}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    const step = Math.max(60_000, Math.round((timeRange.max - timeRange.min) / 96));
-                    applyTravel(v >= timeRange.max - step ? null : v);
-                  }}
-                  aria-label="Time machine scrubber"
-                  className="w-full h-5 cursor-pointer accent-[#ffb85c]"
-                />
-                <div className="flex justify-between text-[8px] font-mono text-white/30 mt-0.5">
-                  <span>{formatShortTime(timeRange.min)}</span>
-                  <span className={timeTraveling ? 'text-[#ffb85c] font-bold' : 'text-neon-green'}>
-                    {timeTraveling ? formatShortTime(tmAt as number) : 'NOW · LIVE'}
-                  </span>
-                </div>
-              </>
-            ) : (
+            {suggestHistory.length === 0 ? (
               <p className="text-[9px] font-mono text-white/30 leading-relaxed">
-                Not enough dated articles yet — the scrubber needs a feed spanning a few hours.
+                No suggestions yet — they appear here as the feed surfaces trending related keywords.
               </p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {suggestHistory.map((h) => {
+                  const onGraph = liveNodes.some((n) => n.id === h.id);
+                  return (
+                    <div key={h.id} className="flex items-center gap-2 py-1 border-b border-white/[0.05] last:border-b-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] font-mono text-white/80 uppercase tracking-wider truncate">
+                          {h.label}
+                        </div>
+                        <div className="text-[8px] font-mono text-white/25">{formatShortTime(h.at)}</div>
+                      </div>
+                      <span
+                        className={`text-[7px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
+                          onGraph || h.status === 'added'
+                            ? 'border-neon-green/50 text-neon-green'
+                            : h.status === 'dismissed'
+                            ? 'border-neon-red/40 text-neon-red/70'
+                            : 'border-white/20 text-white/40'
+                        }`}
+                      >
+                        {onGraph || h.status === 'added' ? 'Added' : h.status === 'dismissed' ? 'Passed' : 'Seen'}
+                      </span>
+                      {!onGraph && (
+                        <button
+                          onClick={() => adoptSuggestion({ id: h.id, label: h.label, parentId: h.parentId })}
+                          aria-label={`Add ${h.label}`}
+                          className="shrink-0 w-5 h-5 rounded-full bg-neon-green/15 border border-neon-green/50 text-neon-green text-[10px] leading-none hover:bg-neon-green/30 transition-colors"
+                        >
+                          +
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </motion.div>
         )}

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { fetchGdeltNews } from '@/services/gdeltService';
+import { mergeArchive } from '@/utils/archive';
 
 // Global variable to persist across fast refreshes
 let globalLastFetchTime = 0;
@@ -49,6 +50,9 @@ export function useGdeltFetch() {
           return;
         }
         setArticles(result.articles);
+        // Bank this fetch into the local archive — it's what lets the time
+        // machine reach further back the longer the app is used.
+        mergeArchive(result.articles);
         setIsLoading(false);
       } catch (err: any) {
         if (isMounted) {

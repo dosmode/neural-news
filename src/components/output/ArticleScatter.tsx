@@ -8,6 +8,7 @@ import { useStore } from '@/store/useStore';
 import { MappedPoint } from '@/types';
 import ClassificationField from './ClassificationField';
 import FilterPanel from './FilterPanel';
+import TimeMachineRail from './TimeMachineRail';
 import { fieldIntensity } from '@/utils/sentimentField';
 import { computeEmphasisMap } from '@/utils/emphasis';
 
@@ -149,7 +150,7 @@ export default function ArticleScatter() {
       </div>
 
       {/* Output controls (view toggle · cluster-mode toggle · field toggle · count) */}
-      <div className="absolute top-3 right-3 z-20 flex flex-wrap items-center justify-end gap-2 max-w-[72%] lg:top-4 lg:right-5 lg:gap-3 lg:max-w-none">
+      <div data-tour="map-controls" className="absolute top-3 right-3 z-20 flex flex-wrap items-center justify-end gap-2 max-w-[72%] lg:top-4 lg:right-5 lg:gap-3 lg:max-w-none">
         {/* View segmented control: Cluster | Timeline */}
         <div className="flex rounded-full border border-white/15 overflow-hidden text-[9px] font-mono uppercase tracking-widest">
           {(['cluster', 'timeline'] as const).map((m) => (
@@ -293,36 +294,39 @@ export default function ArticleScatter() {
       {isTimeline && dimensions.width > 0 && points.length > 0 && (
         <>
           {/* axis baseline */}
-          <div className="absolute left-0 right-0 z-20 h-px bg-white/10 pointer-events-none" style={{ bottom: 40 }} />
+          <div className="absolute left-0 right-0 z-20 h-px bg-white/10 pointer-events-none" style={{ bottom: 64 }} />
           {ticks.map((t, i) => (
             <React.Fragment key={i}>
               {/* faint vertical gridline */}
               <div
                 className="absolute top-12 z-0 w-px bg-white/[0.04] pointer-events-none"
-                style={{ left: t.x, bottom: 40 }}
+                style={{ left: t.x, bottom: 64 }}
               />
               {/* tick label */}
               <div
                 className="absolute z-20 -translate-x-1/2 text-[9px] font-mono text-white/35 pointer-events-none"
-                style={{ left: t.x, bottom: 22 }}
+                style={{ left: t.x, bottom: 46 }}
               >
                 {t.label}
               </div>
             </React.Fragment>
           ))}
           {/* axis caption */}
-          <div className="absolute left-5 z-20 text-[8px] font-mono text-white/20 uppercase tracking-widest pointer-events-none" style={{ bottom: 22 }}>
+          <div className="absolute left-5 z-20 text-[8px] font-mono text-white/20 uppercase tracking-widest pointer-events-none" style={{ bottom: 46 }}>
             ◀ older · newer ▶
           </div>
           {/* Articles without a parseable date can't sit on a time axis —
               say so instead of silently hiding them */}
           {undatedCount > 0 && (
-            <div className="absolute right-5 z-20 text-[8px] font-mono text-white/25 uppercase tracking-widest pointer-events-none" style={{ bottom: 22 }}>
+            <div className="absolute right-5 z-20 text-[8px] font-mono text-white/25 uppercase tracking-widest pointer-events-none" style={{ bottom: 46 }}>
               {undatedCount} undated hidden
             </div>
           )}
         </>
       )}
+
+      {/* Time machine rail: drag along the bottom to rewind the app */}
+      <TimeMachineRail />
 
       {/* Hover preview */}
       <AnimatePresence>

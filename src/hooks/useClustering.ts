@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import { calculateClustering, Cluster } from '@/utils/clustering';
 import { filterArticlesAsOf } from '@/utils/timeline';
+import { timeTravelPool } from '@/utils/archive';
 import { MappedPoint } from '@/types';
 
 export function useClustering(width: number, height: number) {
@@ -12,10 +13,11 @@ export function useClustering(width: number, height: number) {
   const keywords = useStore((state) => state.keywords);
   const timeMachineAt = useStore((state) => state.timeMachineAt);
 
-  // Time machine: only articles from the selected moment's window exist.
+  // Time machine: only articles from the selected moment's window exist —
+  // drawn from the feed + the local archive so older moments have data.
   const articles = useMemo(
-    () => filterArticlesAsOf(allArticles, timeMachineAt),
-    [allArticles, timeMachineAt]
+    () => filterArticlesAsOf(timeTravelPool(allArticles, timeMachineAt, keywords), timeMachineAt),
+    [allArticles, timeMachineAt, keywords]
   );
 
   const [points, setPoints] = useState<MappedPoint[]>([]);
