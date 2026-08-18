@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { AppState } from '@/types';
+import { TIME_MACHINE_WINDOW_MS } from '@/utils/timeline';
 
 // The three global filter weights (spec 012). 0.5 is neutral: no emphasis.
 const DEFAULT_FILTER_WEIGHTS: Record<string, number> = {
@@ -21,6 +22,7 @@ export const useStore = create<AppState>((set) => ({
   clusterMode: 'sentiment',
   viewMode: 'cluster',
   timeMachineAt: null,
+  timeMachineWindowMs: TIME_MACHINE_WINDOW_MS,
 
   // The force graph owns the keyword lifecycle and syncs the full set here.
   setKeywords: (keywords, activeIds) =>
@@ -50,5 +52,17 @@ export const useStore = create<AppState>((set) => ({
 
   setViewMode: (viewMode) => set({ viewMode }),
 
-  setTimeMachineAt: (timeMachineAt) => set({ timeMachineAt }),
+  // Defensive: a non-finite moment or window would silently blank the whole
+  // app (every date filter fails against NaN) — never store one.
+  setTimeMachineAt: (timeMachineAt, windowMs) =>
+    set((s) => ({
+      timeMachineAt:
+        timeMachineAt === null || Number.isFinite(timeMachineAt)
+          ? timeMachineAt
+          : s.timeMachineAt,
+      timeMachineWindowMs:
+        windowMs !== undefined && Number.isFinite(windowMs) && windowMs > 0
+          ? windowMs
+          : s.timeMachineWindowMs,
+    })),
 }));

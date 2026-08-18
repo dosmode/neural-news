@@ -39,6 +39,8 @@ export interface AppState {
   viewMode: ViewMode;
   /** Issue time machine: view the app as of this Unix-ms moment (null = live). */
   timeMachineAt: number | null;
+  /** Width of the selected time window ending at timeMachineAt (min↔max range). */
+  timeMachineWindowMs: number;
 
   // Actions
   setClusterMode: (mode: ClusterMode) => void;
@@ -50,5 +52,5 @@ export interface AppState {
   setIsLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
   toggleClassificationField: () => void;
-  setTimeMachineAt: (at: number | null) => void;
+  setTimeMachineAt: (at: number | null, windowMs?: number) => void;
 }

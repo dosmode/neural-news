@@ -68,13 +68,14 @@ export default function ArticleStrip({
   const isLoading = useStore((s) => s.isLoading);
 
   const timeMachineAt = useStore((s) => s.timeMachineAt);
+  const timeMachineWindowMs = useStore((s) => s.timeMachineWindowMs);
   const keywords = useStore((s) => s.keywords);
   const sorted = useMemo(
     () =>
-      [...filterArticlesAsOf(timeTravelPool(articles, timeMachineAt, keywords), timeMachineAt)].sort(
+      [...filterArticlesAsOf(timeTravelPool(articles, timeMachineAt, keywords), timeMachineAt, timeMachineWindowMs)].sort(
         (a, b) => (b.seendate || '').localeCompare(a.seendate || '')
       ),
-    [articles, timeMachineAt, keywords]
+    [articles, timeMachineAt, timeMachineWindowMs, keywords]
   );
 
   // Horizontal wheel-scroll needs a native non-passive listener: React's

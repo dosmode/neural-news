@@ -8,6 +8,7 @@ export function useTimeline(width: number, height: number) {
   const keywords = useStore((state) => state.keywords);
   const activeKeywords = useStore((state) => state.activeKeywords);
   const timeMachineAt = useStore((state) => state.timeMachineAt);
+  const timeMachineWindowMs = useStore((state) => state.timeMachineWindowMs);
   return useMemo(() => {
     // Same visibility rule as the cluster view (calculateClustering): only
     // articles relevant to an active keyword. Otherwise switching views
@@ -15,8 +16,9 @@ export function useTimeline(width: number, height: number) {
     // (feed + local archive) applies on top.
     const visible = filterArticlesAsOf(
       timeTravelPool(articles, timeMachineAt, keywords),
-      timeMachineAt
+      timeMachineAt,
+      timeMachineWindowMs
     ).filter((a) => Object.keys(a.relevanceMap).some((kw) => activeKeywords.has(kw)));
     return calculateTimeline(visible, width, height);
-  }, [articles, keywords, activeKeywords, timeMachineAt, width, height]);
+  }, [articles, keywords, activeKeywords, timeMachineAt, timeMachineWindowMs, width, height]);
 }

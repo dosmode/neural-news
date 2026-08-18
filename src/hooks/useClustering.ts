@@ -12,12 +12,13 @@ export function useClustering(width: number, height: number) {
   const clusterMode = useStore((state) => state.clusterMode);
   const keywords = useStore((state) => state.keywords);
   const timeMachineAt = useStore((state) => state.timeMachineAt);
+  const timeMachineWindowMs = useStore((state) => state.timeMachineWindowMs);
 
   // Time machine: only articles from the selected moment's window exist —
   // drawn from the feed + the local archive so older moments have data.
   const articles = useMemo(
-    () => filterArticlesAsOf(timeTravelPool(allArticles, timeMachineAt, keywords), timeMachineAt),
-    [allArticles, timeMachineAt, keywords]
+    () => filterArticlesAsOf(timeTravelPool(allArticles, timeMachineAt, keywords), timeMachineAt, timeMachineWindowMs),
+    [allArticles, timeMachineAt, timeMachineWindowMs, keywords]
   );
 
   const [points, setPoints] = useState<MappedPoint[]>([]);

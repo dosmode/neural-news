@@ -283,6 +283,7 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
   // The bottom rail in the map (TimeMachineRail) owns scrubbing; the panel
   // just follows the store's selected moment.
   const timeMachineAt = useStore((s) => s.timeMachineAt);
+  const timeMachineWindowMs = useStore((s) => s.timeMachineWindowMs);
   const timeTraveling = timeMachineAt !== null;
 
   // The importance the RENDERER sees: as-of the scrubbed moment (drawing on
@@ -292,9 +293,9 @@ export default function ForceGraphPanel({ className = '', style }: { className?:
     return computeImportance(
       timeTravelPool(articles, timeMachineAt, storeKeywords),
       liveNodes,
-      { at: timeMachineAt, windowMs: TIME_MACHINE_WINDOW_MS }
+      { at: timeMachineAt, windowMs: timeMachineWindowMs }
     );
-  }, [timeMachineAt, articles, storeKeywords, liveNodes, importanceMap]);
+  }, [timeMachineAt, timeMachineWindowMs, articles, storeKeywords, liveNodes, importanceMap]);
 
   // Write the importance-scaled visual radius onto the node objects (the
   // collide force and the renderer both read n.r) and bump sizeVersion so the
