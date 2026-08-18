@@ -6,6 +6,7 @@ import { mergeArchive } from '@/utils/archive';
 // Global variable to persist across fast refreshes
 let globalLastFetchTime = 0;
 const FETCH_COOLDOWN_MS = 6000; // 6 seconds to be extremely safe with the news source
+const AUTO_REFRESH_MS = 5 * 60_000; // background refresh cadence (visible tab only)
 
 export function useGdeltFetch() {
   const keywords = useStore((state) => state.keywords);
@@ -77,9 +78,27 @@ export function useGdeltFetch() {
 
     scheduleFetch();
 
+    // Auto-refresh: keep the feed (and the time-machine archive) current
+    // without a manual reload — every 5 minutes while the tab is visible,
+    // plus immediately when the user returns to a stale tab.
+    const refreshTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') scheduleFetch();
+    }, AUTO_REFRESH_MS);
+    const onVisible = () => {
+      if (
+        document.visibilityState === 'visible' &&
+        Date.now() - globalLastFetchTime >= AUTO_REFRESH_MS
+      ) {
+        scheduleFetch();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     return () => {
       isMounted = false;
       if (timer) clearTimeout(timer);
+      clearInterval(refreshTimer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [keywords, activeKeywords, hydrated, setArticles, setIsLoading, setError]);
 }
