@@ -1,4 +1,5 @@
 import { Article, KeywordDef } from '@/types';
+import { analyzeSentiment } from '@/utils/sentiment';
 
 // Deterministic hash function for simple heuristics
 function hashString(str: string): number {
@@ -11,44 +12,12 @@ function hashString(str: string): number {
   return Math.abs(hash);
 }
 
-// Fallback Sentiment Heuristic
-// Word-list sentiment (English + Korean). A lexicon heuristic, not ML — but
-// unlike the old title-hash version the label actually reflects the headline.
-const POSITIVE_WORDS = [
-  'surge', 'soar', 'rally', 'rallies', 'record high', 'gain', 'jump', 'boost',
-  'wins', 'beat', 'beats', 'growth', 'rise', 'rises', 'breakthrough',
-  'success', 'profit', 'strong', 'recovery', 'upgrade', 'bullish', 'expands',
-  'milestone', 'award', 'approve', 'approved',
-  '호조', '상승', '급등', '최고치', '돌파', '성공', '흑자', '수익', '성장',
-  '개선', '회복', '호재', '달성', '강세', '수상', '승인', '확대',
-] as const;
-const NEGATIVE_WORDS = [
-  'crash', 'plunge', 'plummet', 'fall', 'falls', 'drop', 'drops', 'loss',
-  'losses', 'fail', 'fails', 'crisis', 'fear', 'fears', 'risk', 'risks',
-  'warn', 'warns', 'warning', 'layoff', 'layoffs', 'decline', 'slump',
-  'weak', 'worst', 'recession', 'downgrade', 'bearish', 'concern', 'tumble',
-  'sink', 'sinks', 'lawsuit', 'fraud', 'ban', 'banned', 'shutdown',
-  '하락', '급락', '최저', '적자', '손실', '위기', '우려', '부진', '침체',
-  '경고', '악재', '약세', '감소', '소송', '사기', '금지', '중단', '파산',
-] as const;
-
-function getSentimentHeuristic(title: string): 'positive' | 'negative' | 'neutral' {
-  const lower = title.toLowerCase();
-  let score = 0;
-  for (const w of POSITIVE_WORDS) if (lower.includes(w)) score += 1;
-  for (const w of NEGATIVE_WORDS) if (lower.includes(w)) score -= 1;
-  if (score > 0) return 'positive';
-  if (score < 0) return 'negative';
-  return 'neutral';
-}
-
-// Fallback Type Heuristic
+// Fallback Type Heuristic — whole-word matches only ('new' used to fire
+// inside "News", flagging nearly every headline as breaking).
 function getTypeHeuristic(title: string): 'breaking' | 'deep-dive' {
-  const lowerTitle = title.toLowerCase();
-  if (lowerTitle.includes('update') || lowerTitle.includes('breaking') || lowerTitle.includes('new') || lowerTitle.includes('reports')) {
-    return 'breaking';
-  }
-  return 'deep-dive';
+  return /\b(breaking|update|updates|live|just in)\b/i.test(title) || /속보|단독/.test(title)
+    ? 'breaking'
+    : 'deep-dive';
 }
 
 // Deterministic 0..1 jitter from a seed string, so the same article + keyword
@@ -126,7 +95,7 @@ export async function fetchGdeltNews(activeKeywords: KeywordDef[]): Promise<News
       id: item.url, // URL is unique after dedup
       title: item.title,
       summary: `Source: ${item.domain}`, // Fallback as artlist lacks body text
-      sentiment: getSentimentHeuristic(item.title),
+      sentiment: analyzeSentiment(item.title),
       relevanceMap: calculateRelevanceMap(item.title, activeKeywords),
       type: getTypeHeuristic(item.title),
       url: item.url,
