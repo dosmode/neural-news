@@ -19,7 +19,9 @@ export const useStore = create<AppState>((set) => ({
   error: null,
   showClassificationField: true,
   hydrated: false,
-  clusterMode: 'sentiment',
+  // Topic grouping is the more striking first impression — sentiment is one
+  // toggle away.
+  clusterMode: 'topic',
   viewMode: 'cluster',
   timeMachineAt: null,
   timeMachineWindowMs: TIME_MACHINE_WINDOW_MS,

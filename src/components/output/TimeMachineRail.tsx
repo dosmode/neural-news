@@ -71,7 +71,11 @@ export default function TimeMachineRail() {
       e.stopPropagation();
       if (!range) return;
       const initEnd = timeMachineAt ?? range.max;
-      const initWindow = traveling ? windowMs : TIME_MACHINE_WINDOW_MS;
+      // First engage: size the default window to the rail (~20% of the span,
+      // min 24h) — a fixed 24h sliver on a month-long rail reads as broken.
+      const initWindow = traveling
+        ? windowMs
+        : Math.max(TIME_MACHINE_WINDOW_MS, (range.max - range.min) * 0.2);
       const grabT = timeAtClientX(e.clientX) ?? initEnd;
       // Band drags keep the grip point — except when engaging FROM live,
       // where the pointer position becomes the window's end (otherwise the
@@ -173,25 +177,32 @@ export default function TimeMachineRail() {
 
           {traveling ? (
             <>
-              {/* selected window band (drag to slide) */}
-              <div
+              {/* selected window band (drag to slide) — tweened so engaging
+                  and dragging glide instead of snapping */}
+              <motion.div
                 onPointerDown={beginDrag('band')}
+                initial={false}
+                animate={{ left: `${startFrac * 100}%`, width: `${Math.max(0.5, (endFrac - startFrac) * 100)}%` }}
+                transition={{ type: 'tween', duration: 0.12, ease: 'easeOut' }}
                 className="absolute top-1/2 -translate-y-1/2 h-[7px] rounded-full bg-[#ffb85c]/35 border border-[#ffb85c]/50 cursor-grab active:cursor-grabbing"
-                style={{ left: `${startFrac * 100}%`, width: `${Math.max(0.5, (endFrac - startFrac) * 100)}%` }}
               />
               {/* MIN handle */}
-              <div
+              <motion.div
                 onPointerDown={beginDrag('start')}
                 aria-label="Range start handle"
+                initial={false}
+                animate={{ left: `${startFrac * 100}%` }}
+                transition={{ type: 'tween', duration: 0.12, ease: 'easeOut' }}
                 className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-[#ffb85c] border-2 border-[#0a0a14] shadow-[0_0_8px_rgba(255,184,92,0.8)] cursor-ew-resize hover:scale-125 transition-transform"
-                style={{ left: `${startFrac * 100}%` }}
               />
               {/* MAX handle */}
-              <div
+              <motion.div
                 onPointerDown={beginDrag('end')}
                 aria-label="Range end handle"
+                initial={false}
+                animate={{ left: `${endFrac * 100}%` }}
+                transition={{ type: 'tween', duration: 0.12, ease: 'easeOut' }}
                 className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-[#ffb85c] border-2 border-[#0a0a14] shadow-[0_0_8px_rgba(255,184,92,0.8)] cursor-ew-resize hover:scale-125 transition-transform"
-                style={{ left: `${endFrac * 100}%` }}
               />
             </>
           ) : (

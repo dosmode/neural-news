@@ -137,6 +137,13 @@ export default function Home() {
           <StatusIndicator />
           <span className="hidden sm:inline text-white/25">SOURCE: GOOGLE NEWS RSS</span>
           <span className="hidden sm:inline text-white/25">MVP v1.0.0</span>
+          <a
+            href="mailto:dosmode111@gmail.com"
+            title="Contact the developer"
+            className="hidden md:inline text-white/25 hover:text-neon-blue transition-colors"
+          >
+            BY JUNGSIK “JACKSON” BYUN
+          </a>
           <button
             onClick={() => setTourOpen(true)}
             aria-label="Show onboarding tour"

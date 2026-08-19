@@ -192,15 +192,18 @@ export default function OnboardingTour({ open, onClose }: OnboardingTourProps) {
       />
 
       {/* Spotlight: a ring around the real element; the giant box-shadow dims
-          everything else, punching a visual hole at the target */}
+          everything else, punching a visual hole at the target. The ring is
+          clamped INSIDE the viewport — a target hugging a screen edge (like
+          the full-height graph panel) would otherwise push its border
+          off-screen and look cut off. */}
       {rect ? (
         <motion.div
           initial={false}
           animate={{
-            left: rect.x - 6,
-            top: rect.y - 6,
-            width: rect.w + 12,
-            height: rect.h + 12,
+            left: Math.max(3, rect.x - 6),
+            top: Math.max(3, rect.y - 6),
+            width: Math.min(vw - 3, rect.x + rect.w + 6) - Math.max(3, rect.x - 6),
+            height: Math.min(vh - 3, rect.y + rect.h + 6) - Math.max(3, rect.y - 6),
             opacity: closing ? 0 : 1,
           }}
           transition={{ type: 'spring', stiffness: 260, damping: 28 }}
