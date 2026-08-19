@@ -9,6 +9,7 @@ import { MappedPoint } from '@/types';
 import ClassificationField from './ClassificationField';
 import FilterPanel from './FilterPanel';
 import TimeMachineRail from './TimeMachineRail';
+import FlowView from './FlowView';
 import { fieldIntensity } from '@/utils/sentimentField';
 import { computeEmphasisMap } from '@/utils/emphasis';
 
@@ -99,7 +100,8 @@ export default function ArticleScatter() {
 
   const intensity = fieldIntensity(sentimentWeight);
   const isTimeline = viewMode === 'timeline';
-  const points = isTimeline ? timelinePoints : clusterPoints;
+  const isFlow = viewMode === 'flow';
+  const points = isFlow ? [] : isTimeline ? timelinePoints : clusterPoints;
 
   // Spec 012: filter weights → per-dot size/brightness emphasis. Neutral
   // weights (0.5) leave every dot at { scale 1, opacity 1 }.
@@ -140,7 +142,7 @@ export default function ArticleScatter() {
         width={dimensions.width}
         height={dimensions.height}
         intensity={intensity}
-        visible={showClassificationField && !isTimeline}
+        visible={showClassificationField && !isTimeline && !isFlow}
         dimmed={isLoading}
       />
 
@@ -153,7 +155,7 @@ export default function ArticleScatter() {
       <div data-tour="map-controls" className="absolute top-3 right-3 z-20 flex flex-wrap items-center justify-end gap-2 max-w-[72%] lg:top-4 lg:right-5 lg:gap-3 lg:max-w-none">
         {/* View segmented control: Cluster | Timeline */}
         <div className="flex rounded-full border border-white/15 overflow-hidden text-[9px] font-mono uppercase tracking-widest">
-          {(['cluster', 'timeline'] as const).map((m) => (
+          {(['cluster', 'timeline', 'flow'] as const).map((m) => (
             <button
               key={m}
               onClick={() => setViewMode(m)}
@@ -169,7 +171,7 @@ export default function ArticleScatter() {
         </div>
 
         {/* Cluster mode segmented control (cluster view only) */}
-        {!isTimeline && (
+        {!isTimeline && !isFlow && (
           <div className="flex rounded-full border border-white/15 overflow-hidden text-[9px] font-mono uppercase tracking-widest">
             {(['sentiment', 'topic'] as const).map((m) => (
               <button
@@ -188,7 +190,7 @@ export default function ArticleScatter() {
         )}
 
         {/* Field toggle (cluster view only) */}
-        {!isTimeline && (
+        {!isTimeline && !isFlow && (
           <button
             onClick={toggleClassificationField}
             className={`text-[9px] font-mono uppercase tracking-widest px-2 py-1 rounded border transition-colors ${
@@ -205,7 +207,7 @@ export default function ArticleScatter() {
         <FilterPanel />
 
         {/* Article count */}
-        {points.length > 0 && (
+        {!isFlow && points.length > 0 && (
           <div className="text-sm font-mono text-white/45 pointer-events-none">
             {points.length} <span className="text-white/20">articles</span>
           </div>
@@ -259,7 +261,7 @@ export default function ArticleScatter() {
       </div>
 
       {/* Cluster proportion labels — glass pills above each cluster (cluster view only) */}
-      {!isTimeline && !isLoading && clusters.map((c) => {
+      {!isTimeline && !isFlow && !isLoading && clusters.map((c) => {
         // Sentiment mode: color by sentiment. Topic mode: neutral accent (cluster is mixed).
         const accent =
           c.kind === 'topic' ? 'text-white'
@@ -325,6 +327,9 @@ export default function ArticleScatter() {
         </>
       )}
 
+      {/* FLOW — the river of issues over the archive's whole span */}
+      {isFlow && <FlowView width={dimensions.width} height={dimensions.height} />}
+
       {/* Time machine rail: drag along the bottom to rewind the app */}
       <TimeMachineRail />
 
@@ -372,7 +377,7 @@ export default function ArticleScatter() {
         </div>
       )}
 
-      {!isLoading && !error && points.length === 0 && dimensions.width > 0 && (
+      {!isLoading && !error && !isFlow && points.length === 0 && dimensions.width > 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <p className="text-white/15 font-mono text-sm">NO DATA POINTS DETECTED</p>
         </div>

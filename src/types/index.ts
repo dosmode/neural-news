@@ -23,7 +23,7 @@ export interface KeywordDef {
 
 export type ClusterMode = 'sentiment' | 'topic';
 
-export type ViewMode = 'cluster' | 'timeline';
+export type ViewMode = 'cluster' | 'timeline' | 'flow';
 
 export interface AppState {
   keywords: KeywordDef[];

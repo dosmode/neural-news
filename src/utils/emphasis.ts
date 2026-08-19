@@ -41,6 +41,10 @@ export function computeEmphasisMap(
   const cR = c(filterWeights['recency'] ?? 0.5);
   const cRel = c(filterWeights['relevance'] ?? 0.5);
 
+  // Normalize by how many axes the user actually moved — a fixed /4 diluted a
+  // single slider to a barely visible ±11% size change.
+  const activeAxes = [cS, cR, cRel].filter((v) => v !== 0).length || 1;
+
   for (const a of articles) {
     const t = parseSeendate(a.seendate);
     const recency = t === null ? 0 : (t - min) / span;
@@ -50,7 +54,7 @@ export function computeEmphasisMap(
     const cTopic = c(filterWeights[topicId] ?? 0.5);
 
     const e = cS * strength + cR * recency + cRel * relevance + cTopic;
-    const emphasis = clamp(e / 4, -1, 1);
+    const emphasis = clamp(e / activeAxes, -1, 1);
 
     map.set(a.id, {
       scale: clamp(1 + emphasis * 0.45, 0.55, 1.45),
